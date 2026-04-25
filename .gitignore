@@ -1,1 +1,8 @@
 .env
+<<<<<<< HEAD
+=======
+uv.lock
+.venv/
+__pycache__/
+*.log
+>>>>>>> c0a00ab (初始化)

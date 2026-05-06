@@ -1,0 +1,22 @@
+# ---- 构建阶段 ----
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+# 构建时不传 VITE_API_BASE_URL，让前端走相对路径（同域反代）
+RUN npm run build
+
+# ---- 运行阶段 ----
+FROM nginx:1.27-alpine
+
+# 复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 复制 nginx 配置（由 docker-compose 挂载覆盖）
+EXPOSE 3000
+
+

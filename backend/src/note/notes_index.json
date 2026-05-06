@@ -1,0 +1,768 @@
+{
+  "notes": [
+    {
+      "id": "note_20260506_143211_0",
+      "title": "任务 1: 概念模型",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T14:32:11.349075"
+    },
+    {
+      "id": "note_20260506_143211_1",
+      "title": "任务 2: 核心 API",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T14:32:11.353103"
+    },
+    {
+      "id": "note_20260506_143224_2",
+      "title": "任务 3: 并发模式",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T14:32:24.090685"
+    },
+    {
+      "id": "note_20260506_143224_3",
+      "title": "任务 4: I/O实践",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T14:32:24.098755"
+    },
+    {
+      "id": "note_20260506_143907_4",
+      "title": "任务 1: 概念模型",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T14:39:07.583676"
+    },
+    {
+      "id": "note_20260506_143907_5",
+      "title": "任务 2: 基础用法",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T14:39:07.585002"
+    },
+    {
+      "id": "note_20260506_143920_6",
+      "title": "任务 3: 并发控制",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T14:39:20.240023"
+    },
+    {
+      "id": "note_20260506_143920_7",
+      "title": "任务 4: 常见陷阱",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T14:39:20.246487"
+    },
+    {
+      "id": "note_20260506_164124_8",
+      "title": "任务 1: 模型前沿",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T16:41:24.704937"
+    },
+    {
+      "id": "note_20260506_164124_9",
+      "title": "任务 2: 应用落地",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T16:41:24.706092"
+    },
+    {
+      "id": "note_20260506_164142_10",
+      "title": "任务 3: 硬件算力",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T16:41:42.412838"
+    },
+    {
+      "id": "note_20260506_164142_11",
+      "title": "任务 4: 政策治理",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T16:41:42.413448"
+    },
+    {
+      "id": "note_20260506_164142_12",
+      "title": "任务 5: 市场格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T16:41:42.414238"
+    },
+    {
+      "id": "note_20260506_164514_13",
+      "title": "任务 1: 技术前沿",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T16:45:14.767215"
+    },
+    {
+      "id": "note_20260506_164514_14",
+      "title": "任务 2: 产业落地",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T16:45:14.768029"
+    },
+    {
+      "id": "note_20260506_164514_15",
+      "title": "任务 3: 治理监管",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T16:45:14.768765"
+    },
+    {
+      "id": "note_20260506_164514_16",
+      "title": "任务 4: 市场格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T16:45:14.769474"
+    },
+    {
+      "id": "note_20260506_165125_17",
+      "title": "任务 1: 技术趋势",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T16:51:25.765285"
+    },
+    {
+      "id": "note_20260506_165125_18",
+      "title": "任务 2: 产业应用",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T16:51:25.766171"
+    },
+    {
+      "id": "note_20260506_165125_19",
+      "title": "任务 3: 产业格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T16:51:25.767024"
+    },
+    {
+      "id": "note_20260506_165125_20",
+      "title": "任务 4: 政策治理",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T16:51:25.767887"
+    },
+    {
+      "id": "note_20260506_165251_21",
+      "title": "任务 1: 技术演进",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T16:52:51.460833"
+    },
+    {
+      "id": "note_20260506_165251_22",
+      "title": "任务 2: 产品格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T16:52:51.461763"
+    },
+    {
+      "id": "note_20260506_165402_23",
+      "title": "任务 3: 应用场景",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T16:54:02.354035"
+    },
+    {
+      "id": "note_20260506_165423_24",
+      "title": "任务 4: 评测安全",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T16:54:23.666571"
+    },
+    {
+      "id": "note_20260506_165435_25",
+      "title": "任务 5: 趋势判断",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T16:54:35.014822"
+    },
+    {
+      "id": "note_20260506_165730_26",
+      "title": "任务 1: 技术范式",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T16:57:30.094553"
+    },
+    {
+      "id": "note_20260506_165730_27",
+      "title": "任务 2: 应用场景",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T16:57:30.095344"
+    },
+    {
+      "id": "note_20260506_165730_28",
+      "title": "任务 3: 产品生态",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T16:57:30.096627"
+    },
+    {
+      "id": "note_20260506_165730_29",
+      "title": "任务 4: 评测治理",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T16:57:30.097916"
+    },
+    {
+      "id": "note_20260506_170229_30",
+      "title": "任务 1: 技术范式",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:02:29.509902"
+    },
+    {
+      "id": "note_20260506_170229_31",
+      "title": "任务 2: 产品格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:02:29.510913"
+    },
+    {
+      "id": "note_20260506_170229_32",
+      "title": "任务 3: 场景落地",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:02:29.511540"
+    },
+    {
+      "id": "note_20260506_170229_33",
+      "title": "任务 4: 评测安全",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:02:29.512402"
+    },
+    {
+      "id": "note_20260506_170229_34",
+      "title": "任务 5: 趋势判断",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T17:02:29.513246"
+    },
+    {
+      "id": "note_20260506_170452_35",
+      "title": "研究报告：2026智能体agent调研",
+      "type": "conclusion",
+      "tags": [
+        "deep_research",
+        "report"
+      ],
+      "created_at": "2026-05-06T17:04:52.511195"
+    },
+    {
+      "id": "note_20260506_171147_36",
+      "title": "任务 1: 技术格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:11:47.726496"
+    },
+    {
+      "id": "note_20260506_171147_37",
+      "title": "任务 2: 产品应用",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:11:47.727381"
+    },
+    {
+      "id": "note_20260506_171147_38",
+      "title": "任务 3: 评测方法",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:11:47.729174"
+    },
+    {
+      "id": "note_20260506_171147_39",
+      "title": "任务 4: 商业生态",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:11:47.730387"
+    },
+    {
+      "id": "note_20260506_171147_40",
+      "title": "任务 5: 安全治理",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T17:11:47.731345"
+    },
+    {
+      "id": "note_20260506_171554_41",
+      "title": "任务 1: 争议定义",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:15:54.512675"
+    },
+    {
+      "id": "note_20260506_171554_42",
+      "title": "任务 2: 法律纠纷",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:15:54.513556"
+    },
+    {
+      "id": "note_20260506_171554_43",
+      "title": "任务 3: 舆论时间线",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:15:54.514733"
+    },
+    {
+      "id": "note_20260506_171554_44",
+      "title": "任务 4: 产品对比",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:15:54.515709"
+    },
+    {
+      "id": "note_20260506_171554_45",
+      "title": "任务 5: 商业影响",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T17:15:54.516616"
+    },
+    {
+      "id": "note_20260506_171754_46",
+      "title": "任务 1: 事件界定",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:17:54.757492"
+    },
+    {
+      "id": "note_20260506_171754_47",
+      "title": "任务 2: 时间线",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:17:54.758431"
+    },
+    {
+      "id": "note_20260506_171754_48",
+      "title": "任务 3: 法律争议",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:17:54.759381"
+    },
+    {
+      "id": "note_20260506_171754_49",
+      "title": "任务 4: 舆论平台",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:17:54.760288"
+    },
+    {
+      "id": "note_20260506_171754_50",
+      "title": "任务 5: 产业影响",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T17:17:54.761325"
+    },
+    {
+      "id": "note_20260506_172418_51",
+      "title": "任务 1: 技术脉络",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:24:18.568146"
+    },
+    {
+      "id": "note_20260506_172418_52",
+      "title": "任务 2: 产品格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:24:18.569229"
+    },
+    {
+      "id": "note_20260506_172418_53",
+      "title": "任务 3: 场景落地",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:24:18.570297"
+    },
+    {
+      "id": "note_20260506_172418_54",
+      "title": "任务 4: 评测方法",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:24:18.571391"
+    },
+    {
+      "id": "note_20260506_172418_55",
+      "title": "任务 5: 风险治理",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T17:24:18.572853"
+    },
+    {
+      "id": "note_20260506_172656_56",
+      "title": "研究报告：2026智能体agent调研",
+      "type": "conclusion",
+      "tags": [
+        "deep_research",
+        "report"
+      ],
+      "created_at": "2026-05-06T17:26:56.791371"
+    },
+    {
+      "id": "note_20260506_173108_57",
+      "title": "任务 1: 技术路线",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:31:08.410732"
+    },
+    {
+      "id": "note_20260506_173108_58",
+      "title": "任务 2: 产品格局",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:31:08.411900"
+    },
+    {
+      "id": "note_20260506_173108_59",
+      "title": "任务 3: 场景落地",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:31:08.412876"
+    },
+    {
+      "id": "note_20260506_173108_60",
+      "title": "任务 4: 评测安全",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:31:08.414021"
+    },
+    {
+      "id": "note_20260506_174335_61",
+      "title": "任务 1: 技术范式",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:43:35.666404"
+    },
+    {
+      "id": "note_20260506_174335_62",
+      "title": "任务 2: 应用场景",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:43:35.667971"
+    },
+    {
+      "id": "note_20260506_174335_63",
+      "title": "任务 3: 评测安全",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:43:35.669536"
+    },
+    {
+      "id": "note_20260506_174335_64",
+      "title": "任务 4: 产品生态",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:43:35.671562"
+    },
+    {
+      "id": "note_20260506_174335_65",
+      "title": "任务 5: 趋势判断",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T17:43:35.672746"
+    },
+    {
+      "id": "note_20260506_175434_66",
+      "title": "任务 1: 基础概况",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T17:54:34.244112"
+    },
+    {
+      "id": "note_20260506_175434_67",
+      "title": "任务 2: 商业表现",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T17:54:34.245361"
+    },
+    {
+      "id": "note_20260506_175434_68",
+      "title": "任务 3: 版本内容",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T17:54:34.246652"
+    },
+    {
+      "id": "note_20260506_175434_69",
+      "title": "任务 4: 社区口碑",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T17:54:34.247850"
+    },
+    {
+      "id": "note_20260506_190516_70",
+      "title": "任务 1: 基础画像",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-05-06T19:05:16.800715"
+    },
+    {
+      "id": "note_20260506_190516_71",
+      "title": "任务 2: 玩法机制",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-05-06T19:05:16.803920"
+    },
+    {
+      "id": "note_20260506_190516_72",
+      "title": "任务 3: 商业模式",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-05-06T19:05:16.805010"
+    },
+    {
+      "id": "note_20260506_190516_73",
+      "title": "任务 4: 社区舆情",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-05-06T19:05:16.806107"
+    },
+    {
+      "id": "note_20260506_190516_74",
+      "title": "任务 5: 市场对比",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_5"
+      ],
+      "created_at": "2026-05-06T19:05:16.807360"
+    },
+    {
+      "id": "note_20260506_190918_75",
+      "title": "研究报告：genshin impact",
+      "type": "conclusion",
+      "tags": [
+        "deep_research",
+        "report"
+      ],
+      "created_at": "2026-05-06T19:09:18.343432"
+    }
+  ],
+  "metadata": {
+    "created_at": "2026-05-06T14:31:56.686365",
+    "total_notes": 76
+  }
+}

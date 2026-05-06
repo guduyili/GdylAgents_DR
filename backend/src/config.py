@@ -41,7 +41,7 @@ class Configuration(BaseModel):
         description="使用的网络搜索后端",
     )
 
-    enable_noted: bool = Field(
+    enable_notes: bool = Field(
         default=True,
         title="启用笔记",
         description="是否将任务进展持久化到NoteTool",

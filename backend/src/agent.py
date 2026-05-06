@@ -28,6 +28,7 @@ from services.tool_events import ToolCallTracker
 
 
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +80,7 @@ class DeepResearchAgent:
         )
         # 总结 Agent 使用工厂函数，每个任务创建独立实例，避免历史污染
         self._summarizer_factory : Callable[[],ToolAwareSimpleAgent] = lambda: self._create_tool_aware_agent(
-            name="内容总结专家",
+            name="任务总结专家",
             system_prompt=task_summarizer_instructions.strip(),
         )
 
@@ -148,7 +149,8 @@ class DeepResearchAgent:
             name=name,
             llm=self.llm,
             system_prompt=system_prompt,
-            tools_registry=self.tools_registry is not None,
+            enable_tool_calling = self.tools_registry is not None,
+            tool_registry=self.tools_registry,
             tool_call_listener=self._tool_tracker.record,   # 注册工具回调使用
         )
 
@@ -166,17 +168,27 @@ class DeepResearchAgent:
         # 第一步： 规划任务列表
         state.todo_items = self.planner.plan_todo_list(state)
         self._drain_tool_events(state)
+
         
         if not state.todo_items:
             logger.info("规划未产生任务，使用兜底任务")
             state.todo_items = [self.planner.create_fallback_task(state)]
+
         
         # 第二步： 逐个执行任务（搜索 + 总结）
         for task in state.todo_items:
             self._execute_task(state,task,emit_stream=False)
 
         # 第三步： 生成最终报告
-        report = self.reporting.generate_report(state)
+        try:
+            report = self.reporting.generate_report(state)
+        except Exception as exc:
+            logger.exception("报告生成失败，使用任务摘要兜底: %s", exc)
+            summaries = "\n\n".join(
+                f"### {t.title}\n{t.summary or '暂无摘要'}"
+                for t in state.todo_items
+            )
+            report = f"## 研究摘要（报告生成失败，使用任务摘要兜底）\n\n{summaries}"
         self._drain_tool_events(state)
         state.structured_report = report
         state.running_summary = report
@@ -202,7 +214,7 @@ class DeepResearchAgent:
         """
         state = SummaryState(research_topic=topic)
         logger.debug("开始流式研究： topic=%s",topic)
-        yield {"type":"status","messages":"初始化研究流程"}
+        yield {"type": "status", "message": "初始化研究流程"}
         
         # 规划任务
         state.todo_items = self.planner.plan_todo_list(state)
@@ -243,7 +255,7 @@ class DeepResearchAgent:
             channel = channel_map.get(target_task_id) if target_task_id is not None else None
             if channel:
                 payload.setdefault("step", channel["step"])
-                payload["steam_token"] = channel["token"]
+                payload["stream_token"] = channel["token"]
             if step_override is not None:
                 payload["step"] = step_override
             
@@ -300,7 +312,7 @@ class DeepResearchAgent:
         # 启动所有任务线程（并发执行）
         for task in state.todo_items:
             step = channel_map.get(task.id,{}).get("step",0)
-            thread = Thread(target=worker,args={task,step},daemon=True)
+            thread = Thread(target=worker, args=(task, step), daemon=True)
             threads.append(thread)
             thread.start()
         active_workers = len(state.todo_items)
@@ -322,25 +334,34 @@ class DeepResearchAgent:
                 thread.join()
 
         # 所有任务完成后生成最终报告
-        report = self.reporting.generate_report(state)
-        final_step = len(state.todo_items) +1
+        final_step = len(state.todo_items) + 1
+        try:
+            report = self.reporting.generate_report(state)
+        except Exception as exc:
+            logger.exception("报告生成失败，将使用任务摘要兜底: %s", exc)
+            summaries = "\n\n".join(
+                f"### {t.title}\n{t.summary or '暂无摘要'}"
+                for t in state.todo_items
+            )
+            report = f"## 研究摘要（报告生成失败，使用任务摘要兜底）\n\n{summaries}"
+
         for event in self._drain_tool_events(state, step=final_step):
             yield event
         state.structured_report = report
         state.running_summary = report
-        
+
         note_event = self._persist_final_report(state, report)
         if note_event:
             yield note_event
-        
-        yield{
-            "type":"final_report",
+
+        yield {
+            "type": "final_report",
             "report": report,
             "note_id": state.report_note_id,
             "note_path": state.report_note_path,
         }
 
-        yield {"type":"done"}
+        yield {"type": "done"}
 
 
     # ------------------------------------------------------------------
@@ -631,5 +652,8 @@ def run_deep_research(topic: str, config: Configuration | None = None)->SummaryS
     """便捷函数：一行代码启动完整研究流程。"""
     agent = DeepResearchAgent(config = config)
     return agent.run(topic)
+    
+        
+    
     
         

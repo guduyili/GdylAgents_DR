@@ -6,3 +6,4 @@ uv.lock
 __pycache__/
 *.log
 >>>>>>> c0a00ab (初始化)
+node_modules

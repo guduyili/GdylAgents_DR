@@ -115,7 +115,9 @@ class SummarizationService:
                     raw_buffer += chunk
                     if remove_thinking:
                         for segment in flush_visible():
-                            yield segment
+                            visible_output += segment   # ← 必须累积，否则 get_summary() 返回空
+                            if segment:
+                                yield segment
                     else:
                         visible_output += chunk
                         if chunk:
@@ -153,8 +155,3 @@ class SummarizationService:
             f"{build_note_guidance(task)}\n"
             "请按照以上协作要求先同步笔记，然后返回一份面向用户的 Markdown 总结（仍遵循任务总结模板）。"
         )
-
-
-            
-
-

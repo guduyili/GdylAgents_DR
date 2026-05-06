@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-
 import json
+import time
+
 
 from hello_agents import ToolAwareSimpleAgent
 
@@ -11,7 +12,6 @@ from models import SummaryState
 from config import Configuration
 from utils import strip_thinking_tokens
 from services.text_processing import strip_tool_calls
-
 
 
 class ReportingService:
@@ -68,15 +68,24 @@ class ReportingService:
         )
 
         # 拼装发给报告 Agent的完整的 prompt
-        prompt = {
+        prompt = (
             f"研究主题：{state.research_topic}\n"
             f"任务概览：\n{''.join(tasks_block)}\n"
             f"可用任务笔记：\n{notes_section}\n"
             f"请针对每条任务笔记使用格式：[TOOL_CALL:note:{read_template}] 读取内容，整合所有信息后撰写报告。\n"
             f"如需输出汇总结论，可追加调用：[TOOL_CALL:note:{create_conclusion_template}] 保存报告要点。"
-        }
+        )
         
-        response = self._agent.run(prompt)
+        # 指数退避重试：最多 3 次，间隔 1s / 2s
+        response = ""
+        for attempt in range(3):
+            try:
+                response = self._agent.run(prompt)
+                break
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
         self._agent.clear_history() # 清空对话历史，避免污染后续调用
 
         report_text = response.strip()

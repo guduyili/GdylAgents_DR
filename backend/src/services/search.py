@@ -135,7 +135,7 @@ def dispatch_search(
     return payload, notices, answer_text, backend_label
 
 
-def prepare_research_query(
+def prepare_research_context(
     search_result: dict[str, Any] | None,
     answer_text: Optional[str],
     config: Configuration,

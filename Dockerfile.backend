@@ -31,5 +31,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
 
-# 使用 uv run 启动，确保走虚拟环境
-CMD ["uv", "run", "--directory", "/app", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# 使用 src 目录作为运行目录，确保 uvicorn 能找到 main.py
+CMD ["uv", "run", "--directory", "/app/src", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

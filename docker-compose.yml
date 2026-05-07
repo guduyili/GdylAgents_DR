@@ -9,7 +9,7 @@ services:
     env_file:
       - ./backend/src/.env
     volumes:
-      - notes_data:/data/notes
+      - notes_data:/app/src/note
     networks:
       - internal
     # 不对外暴露端口，仅通过 nginx 反代访问

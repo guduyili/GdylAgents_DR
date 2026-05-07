@@ -1,5 +1,6 @@
 const baseURL =
   import.meta.env.VITE_API_BASE_URL || "";
+  // "http://localhost:8000";
 
 export interface ResearchRequest {
   topic: string;
@@ -13,6 +14,19 @@ export interface ResearchStreamEvent {
 
 export interface StreamOptions {
   signal?: AbortSignal;
+}
+
+export interface ReportItem {
+  id: string;
+  title: string;
+  created_at: string;
+  tags: string[];
+}
+
+export interface ReportDetail {
+  id: string;
+  title: string;
+  content: string;
 }
 
 export async function runResearchStream(
@@ -75,7 +89,6 @@ export async function runResearchStream(
     }
 
     if (done) {
-      // 处理可能的尾巴事件
       if (buffer.trim()) {
         const rawEvent = buffer.trim();
         if (rawEvent.startsWith("data:")) {
@@ -93,4 +106,18 @@ export async function runResearchStream(
       break;
     }
   }
+}
+
+/** 获取所有历史研究报告列表（conclusion 类型笔记） */
+export async function listReports(): Promise<ReportItem[]> {
+  const res = await fetch(`${baseURL}/notes/reports`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+/** 获取单条报告的完整 Markdown 内容 */
+export async function getReport(noteId: string): Promise<ReportDetail> {
+  const res = await fetch(`${baseURL}/notes/reports/${encodeURIComponent(noteId)}`);
+  if (!res.ok) throw new Error("报告不存在");
+  return res.json();
 }

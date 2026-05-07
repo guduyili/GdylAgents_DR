@@ -195,6 +195,54 @@ def create_app() -> FastAPI:
             },
         )
 
+
+
+
+
+
+    @app.get("/notes/reports")
+    def list_reports() -> list[dict]:
+        """返回所有 conclusion 类型的笔记（即最终研究报告）列表，按时间倒序。"""
+        index_path = Path(__file__).parent / "note" / "notes_index.json"
+        if not index_path.exists():
+            return []
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        notes = data.get("notes", [])
+        reports = [
+            {
+                "id": n["id"],
+                "title": n.get("title", ""),
+                "created_at": n.get("created_at", ""),
+                "tags": n.get("tags", []),
+            }
+            for n in notes
+            if n.get("type") == "conclusion"
+        ]
+        return sorted(reports, key=lambda x: x["created_at"], reverse=True)
+
+    @app.get("/notes/reports/{note_id}")
+    def get_report(note_id: str) -> dict:
+        """获取单条 conclusion 报告的完整 Markdown 内容。"""
+        note_path = Path(__file__).parent / "note" / f"{note_id}.md"
+        if not note_path.exists():
+            raise HTTPException(status_code=404, detail="报告不存在")
+        content = note_path.read_text(encoding="utf-8")
+        # 解析 frontmatter（第一行可能是 YAML --- 块）
+        title = note_id
+        body = content
+        if content.startswith("---"):
+            end = content.find("---", 3)
+            if end != -1:
+                frontmatter = content[3:end].strip()
+                body = content[end + 3:].strip()
+                for line in frontmatter.splitlines():
+                    if line.startswith("title:"):
+                        title = line.split(":", 1)[1].strip().strip('"').strip("'")
+        return {"id": note_id, "title": title, "content": body}
+
     return app
 
 

@@ -65,6 +65,15 @@
               </span>
             </button>
             <button
+              type="button"
+              class="submit history-submit-btn"
+              style="margin-left: auto;"
+              @click="openHistoryPage"
+            >
+              历史记录
+              <span v-if="historyReports.length" class="history-badge-inline">{{ historyReports.length }}</span>
+            </button>
+            <button
               v-if="loading"
               type="button"
               class="secondary-btn"
@@ -89,8 +98,54 @@
       </section>
     </div>
 
+    <!-- 历史记录全屏页 -->
+    <div v-if="historyPageOpen" class="history-page">
+      <div class="history-page-header">
+        <button class="back-btn" @click="closeHistoryPage">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          返回
+        </button>
+        <h2>📋 历史研究记录</h2>
+      </div>
+
+      <!-- 列表 / 详情 双列 -->
+      <div class="history-page-body">
+        <!-- 左：报告列表 -->
+        <aside class="history-page-list">
+          <p v-if="historyLoading" class="muted">加载中…</p>
+          <p v-else-if="!historyReports.length" class="muted">暂无历史记录</p>
+          <ul v-else class="history-list">
+            <li v-for="r in historyReports" :key="r.id" class="history-item">
+              <button
+                class="history-btn"
+                :class="{ active: selectedReport?.id === r.id }"
+                type="button"
+                @click="openReport(r.id)"
+              >
+                <span class="history-title">{{ r.title }}</span>
+                <span class="history-date muted">{{ r.created_at.slice(0, 16).replace('T', ' ') }}</span>
+              </button>
+            </li>
+          </ul>
+        </aside>
+
+        <!-- 右：报告详情 -->
+        <article class="history-page-detail">
+          <template v-if="selectedReport">
+            <div class="history-detail-header">
+              <h3>{{ selectedReport.title }}</h3>
+            </div>
+            <pre class="block-pre history-detail-content">{{ selectedReport.content }}</pre>
+          </template>
+          <p v-else class="muted" style="padding:24px;"></p>
+        </article>
+      </div>
+    </div>
+
     <!-- 全屏状态：左右分栏布局 -->
-    <div v-else class="layout layout-fullscreen">
+    <div v-if="isExpanded" class="layout layout-fullscreen">
       <!-- 左侧：研究信息 -->
       <aside class="sidebar">
         <div class="sidebar-header">
@@ -152,6 +207,13 @@
           <div class="status-controls">
             <button class="secondary-btn" @click="logsCollapsed = !logsCollapsed">
               {{ logsCollapsed ? "展开流程" : "收起流程" }}
+            </button>
+            <button
+              v-if="reportMarkdown && !loading"
+              class="secondary-btn"
+              @click="downloadReport"
+            >
+              ⬇ 下载报告
             </button>
           </div>
         </header>
@@ -263,6 +325,21 @@
               <p v-else class="muted">暂无可用来源</p>
             </section>
 
+            <!-- sources_summary 折叠区块 -->
+            <section v-if="currentTask?.sourcesSummary" class="sources-summary-block">
+              <button
+                class="collapsible-header"
+                type="button"
+                @click="sourcesSummaryOpen = !sourcesSummaryOpen"
+              >
+                <span>来源摘要</span>
+                <span>{{ sourcesSummaryOpen ? '▲' : '▼' }}</span>
+              </button>
+              <div v-show="sourcesSummaryOpen" class="collapsible-body">
+                <pre class="block-pre">{{ currentTask.sourcesSummary }}</pre>
+              </div>
+            </section>
+
             <section
               class="summary-block"
               :class="{ 'block-highlight': summaryHighlight }"
@@ -336,11 +413,15 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import {
   runResearchStream,
-  type ResearchStreamEvent
+  listReports,
+  getReport,
+  type ResearchStreamEvent,
+  type ReportItem,
+  type ReportDetail
 } from "./services/api";
 
 interface SourceItem {
@@ -397,6 +478,58 @@ const reportHighlight = ref(false);
 const toolHighlight = ref(false);
 
 let currentController: AbortController | null = null;
+
+// ── 历史报告 ──────────────────────────────────────
+const historyReports = ref<ReportItem[]>([]);
+const historyLoading = ref(false);
+const selectedReport = ref<ReportDetail | null>(null);
+const historyPageOpen = ref(false);
+
+async function loadHistory() {
+  historyLoading.value = true;
+  try {
+    historyReports.value = await listReports();
+  } catch {
+    // 服务不可用时静默失败
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function openHistoryPage() {
+  historyPageOpen.value = true;
+  selectedReport.value = null;
+}
+
+function closeHistoryPage() {
+  historyPageOpen.value = false;
+}
+
+async function openReport(noteId: string) {
+  try {
+    selectedReport.value = await getReport(noteId);
+  } catch (e) {
+    console.error("加载报告失败", e);
+  }
+}
+
+// ── 下载报告 ──────────────────────────────────────
+function downloadReport() {
+  if (!reportMarkdown.value) return;
+  const blob = new Blob([reportMarkdown.value], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `report_${form.topic.slice(0, 20).replace(/\s+/g, "_")}_${Date.now()}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── sources_summary 折叠 ──────────────────────────
+const sourcesSummaryOpen = ref(false);
+watch(() => activeTaskId.value, () => {
+  sourcesSummaryOpen.value = false;
+});
 
 const searchOptions = [
   "advanced",
@@ -988,6 +1121,10 @@ onBeforeUnmount(() => {
     currentController.abort();
     currentController = null;
   }
+});
+
+onMounted(() => {
+  loadHistory();
 });
 </script>
 
@@ -2300,5 +2437,190 @@ select:focus {
   .layout-fullscreen .panel-result {
     height: 60vh;
   }
+}
+/* ── 历史记录入口按钮（与开始研究同款，靠右） ── */
+.history-submit-btn {
+  background: linear-gradient(135deg, #6366f1, #818cf8);
+  position: relative;
+}
+
+.history-submit-btn:hover {
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+}
+
+.history-badge-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.3);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  padding: 1px 7px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* ── 历史记录全屏页 ──────────────────────── */
+.history-page {
+  position: fixed;
+  inset: 0;
+  background: #f8fafc;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+}
+
+.history-page-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.history-page-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.history-page-list {
+  width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid #e2e8f0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-page-detail {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-detail-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.history-detail-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.history-detail-content {
+  flex: 1;
+  margin: 0;
+  padding: 20px 24px;
+  border-radius: 0;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+/* ── 历史列表通用 ─────────────────────────── */
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-item {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.history-btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  gap: 4px;
+}
+
+.history-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.history-btn.active {
+  background: #eff6ff;
+  border-color: #4f46e5;
+}
+
+.history-title {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #1e40af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-date {
+  font-size: 0.75rem;
+}
+
+/* ── sources_summary 折叠 ────────────────── */
+.sources-summary-block {
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.collapsible-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: none;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #374151;
+  transition: background 0.15s;
+}
+
+.collapsible-header:hover {
+  background: #eff6ff;
+}
+
+.collapsible-body {
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.collapsible-body .block-pre {
+  margin: 0;
+  max-height: 280px;
+  overflow-y: auto;
 }
 </style>

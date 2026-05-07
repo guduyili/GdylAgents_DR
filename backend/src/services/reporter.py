@@ -68,13 +68,22 @@ class ReportingService:
         )
 
         # 拼装发给报告 Agent的完整的 prompt
-        prompt = (
-            f"研究主题：{state.research_topic}\n"
-            f"任务概览：\n{''.join(tasks_block)}\n"
-            f"可用任务笔记：\n{notes_section}\n"
-            f"请针对每条任务笔记使用格式：[TOOL_CALL:note:{read_template}] 读取内容，整合所有信息后撰写报告。\n"
-            f"如需输出汇总结论，可追加调用：[TOOL_CALL:note:{create_conclusion_template}] 保存报告要点。"
-        )
+        all_skipped = all(t.status == "skipped" for t in state.todo_items)
+        if all_skipped:
+            prompt = (
+                f"研究主题：{state.research_topic}\n\n"
+                "由于搜索服务暂时不可用，未能获取网络资料。\n"
+                "请根据你的知识，针对该研究主题生成一份结构化的概览报告（约 500 字），"
+                "包含背景、关键要点和总结。"
+            )
+        else:
+            prompt = (
+                f"研究主题：{state.research_topic}\n"
+                f"任务概览：\n{''.join(tasks_block)}\n"
+                f"可用任务笔记：\n{notes_section}\n"
+                f"请针对每条任务笔记使用格式：[TOOL_CALL:note:{read_template}] 读取内容，整合所有信息后撰写报告。\n"
+                f"如需输出汇总结论，可追加调用：[TOOL_CALL:note:{create_conclusion_template}] 保存报告要点。"
+            )
         
         # 指数退避重试：最多 3 次，间隔 1s / 2s
         response = ""
@@ -92,6 +101,7 @@ class ReportingService:
         if self._config.strip_thinking_tokens:
             report_text = strip_thinking_tokens(report_text)
 
-        report_text = strip_tool_calls(report_text).strip()
-        return report_text or "报告生成失败，请检查输入"
+        cleaned = strip_tool_calls(report_text).strip()
+        # 如果清理后为空，说明 LLM 把工具调用混入正文被全部删除，回退到原始输出
+        return cleaned or report_text or "报告生成失败，请检查输入"
         

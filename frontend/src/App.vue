@@ -486,6 +486,7 @@ const selectedReport = ref<ReportDetail | null>(null);
 const historyPageOpen = ref(false);
 
 async function loadHistory() {
+  if (historyLoading.value) return; // 已在加载中，跳过
   historyLoading.value = true;
   try {
     historyReports.value = await listReports();
@@ -499,6 +500,7 @@ async function loadHistory() {
 function openHistoryPage() {
   historyPageOpen.value = true;
   selectedReport.value = null;
+  loadHistory(); // 打开时刷新，确保数据最新
 }
 
 function closeHistoryPage() {
@@ -1059,6 +1061,8 @@ const handleSubmit = async () => {
           reportMarkdown.value = report || "报告生成失败，未获得有效内容";
           pulse(reportHighlight);
           progressLogs.value.push("最终报告已生成");
+          // 报告写入 note 后刷新历史列表
+          loadHistory();
           return;
         }
 

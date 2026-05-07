@@ -77,6 +77,7 @@ class DeepResearchAgent:
         self.report_agent = self._create_tool_aware_agent(
             name="报告撰写专家",
             system_prompt=report_writer_instructions.strip(),
+            model_override=self.config.resolved_report_model(),
         )
         # 总结 Agent 使用工厂函数，每个任务创建独立实例，避免历史污染
         self._summarizer_factory : Callable[[],ToolAwareSimpleAgent] = lambda: self._create_tool_aware_agent(
@@ -141,18 +142,44 @@ class DeepResearchAgent:
         return HelloAgentsLLM(**llm_kwargs)
 
 
-    def _create_tool_aware_agent(self, *, name:str, system_prompt: str)->ToolAwareSimpleAgent:
+    def _create_tool_aware_agent(self, *, name: str, system_prompt: str, model_override: str | None = None) -> ToolAwareSimpleAgent:
         """
-        创建共享LLM和工具注册表的ToolAwareSimpleAgent 实例
+        创建共享LLM和工具注册表的ToolAwareSimpleAgent 实例。
+        model_override 不为空时，为该 agent 单独创建一个指定模型的 LLM 实例。
         """
+        if model_override and model_override != self.config.resolved_model():
+            # 用相同连接参数，只换 model 名称
+            llm = self.__init__llm_with_model(model_override)
+        else:
+            llm = self.llm
         return ToolAwareSimpleAgent(
             name=name,
-            llm=self.llm,
+            llm=llm,
             system_prompt=system_prompt,
-            enable_tool_calling = self.tools_registry is not None,
+            enable_tool_calling=self.tools_registry is not None,
             tool_registry=self.tools_registry,
-            tool_call_listener=self._tool_tracker.record,   # 注册工具回调使用
+            tool_call_listener=self._tool_tracker.record,
         )
+
+    def __init__llm_with_model(self, model_id: str) -> HelloAgentsLLM:
+        """用与主 LLM 相同的连接配置，但替换 model 名称，创建新的 LLM 实例。"""
+        llm_kwargs: dict[str, Any] = {"temperature": 0.0, "model": model_id}
+        provider = (self.config.llm_provider or "").strip()
+        if provider:
+            llm_kwargs["provider"] = provider
+        if provider == "ollama":
+            llm_kwargs["base_url"] = self.config.sanitized_ollama_url()
+            llm_kwargs["api_key"] = self.config.llm_api_key or "ollama"
+        elif provider == "lmstudio":
+            llm_kwargs["base_url"] = self.config.lmstudio_base_url
+            if self.config.llm_api_key:
+                llm_kwargs["api_key"] = self.config.llm_api_key
+        else:
+            if self.config.llm_base_url:
+                llm_kwargs["base_url"] = self.config.llm_base_url
+            if self.config.llm_api_key:
+                llm_kwargs["api_key"] = self.config.llm_api_key
+        return HelloAgentsLLM(**llm_kwargs)
 
     def _set_tool_event_sink(self, sink: Callable[[dict[str,Any]], None]| None)->None:
         """启用或禁用工具事件的实时回调（流式模式下使用）。"""

@@ -226,7 +226,15 @@ def create_app() -> FastAPI:
     @app.get("/notes/reports/{note_id}")
     def get_report(note_id: str) -> dict:
         """获取单条 conclusion 报告的完整 Markdown 内容。"""
-        note_path = Path(__file__).parent / "note" / f"{note_id}.md"
+        import re
+        # 安全校验：note_id 只允许字母、数字、下划线、连字符
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', note_id):
+            raise HTTPException(status_code=400, detail="非法的报告 ID")
+        note_dir = (Path(__file__).parent / "note").resolve()
+        note_path = (note_dir / f"{note_id}.md").resolve()
+        # 确保解析后的路径仍在 note 目录内，防止路径穿越
+        if not str(note_path).startswith(str(note_dir)):
+            raise HTTPException(status_code=400, detail="非法的报告 ID")
         if not note_path.exists():
             raise HTTPException(status_code=404, detail="报告不存在")
         content = note_path.read_text(encoding="utf-8")

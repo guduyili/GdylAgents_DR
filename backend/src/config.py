@@ -93,6 +93,11 @@ class Configuration(BaseModel):
         title="LLM 模型 ID",
         description="使用自定义 OpenAI 兼容服务时的模型名称",
     )
+    report_model_id: Optional[str] = Field(
+        default=None,
+        title="报告模型 ID",
+        description="专用于最终报告生成的模型（不填则与 llm_model_id 一致）",
+    )
 
 
     @classmethod
@@ -115,6 +120,7 @@ class Configuration(BaseModel):
             "llm_provider": os.getenv("LLM_PROVIDER"),
             "llm_api_key": os.getenv("LLM_API_KEY"),
             "llm_model_id": os.getenv("LLM_MODEL_ID"),
+            "report_model_id": os.getenv("REPORT_MODEL_ID"),
             "llm_base_url": os.getenv("LLM_BASE_URL"),
             "lmstudio_base_url": os.getenv("LMSTUDIO_BASE_URL"),
             "ollama_base_url": os.getenv("OLLAMA_BASE_URL"),
@@ -153,4 +159,8 @@ class Configuration(BaseModel):
     def resolved_model(self) -> Optional[str]:
         """返回最终使用的模型名称：优先取 llm_model_id，回退到 local_llm。"""
         return self.llm_model_id or self.local_llm
+
+    def resolved_report_model(self) -> Optional[str]:
+        """返回报告专用模型名称：优先取 report_model_id，回退到主模型。"""
+        return self.report_model_id or self.resolved_model()
 

@@ -3,8 +3,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json ./
+RUN npm install --registry=https://registry.npmmirror.com
 
 COPY . .
 # 构建时不传 VITE_API_BASE_URL，让前端走相对路径（同域反代）

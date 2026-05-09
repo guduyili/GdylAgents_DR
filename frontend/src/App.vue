@@ -137,7 +137,7 @@
             <div class="history-detail-header">
               <h3>{{ selectedReport.title }}</h3>
             </div>
-            <pre class="block-pre history-detail-content">{{ selectedReport.content }}</pre>
+            <pre class="block-pre history-detail-content md-body" v-html="renderMd(selectedReport.content)"></pre>
           </template>
           <p v-else class="muted" style="padding:24px;"></p>
         </article>
@@ -404,7 +404,7 @@
           :class="{ 'block-highlight': reportHighlight }"
         >
           <h3>最终报告</h3>
-          <pre class="block-pre">{{ reportMarkdown }}</pre>
+          <div class="block-pre md-body" v-html="renderMd(reportMarkdown)"></div>
         </div>
       </section>
 
@@ -414,6 +414,15 @@
 
 <script lang="ts" setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
+/** 将 Markdown 字符串渲染为安全的 HTML */
+function renderMd(src: string): string {
+  if (!src) return "";
+  const raw = marked.parse(src, { async: false }) as string;
+  return DOMPurify.sanitize(raw);
+}
 
 import {
   runResearchStream,
@@ -1859,6 +1868,113 @@ select:focus {
 
 .block-pre::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, rgba(79, 70, 229, 0.8), rgba(37, 99, 235, 0.75));
+}
+
+/* ── Markdown 渲染区域 ───────────────────── */
+.md-body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  white-space: normal;       /* 覆盖 pre 的 pre-wrap，允许正常换行 */
+  font-size: 14px;
+  line-height: 1.75;
+  color: #1e293b;
+}
+
+.md-body h1, .md-body h2, .md-body h3,
+.md-body h4, .md-body h5, .md-body h6 {
+  margin: 1.2em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #0f172a;
+}
+
+.md-body h1 { font-size: 1.5em; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }
+.md-body h2 { font-size: 1.25em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.2em; }
+.md-body h3 { font-size: 1.05em; }
+
+.md-body p {
+  margin: 0.6em 0;
+}
+
+.md-body ul, .md-body ol {
+  padding-left: 1.6em;
+  margin: 0.5em 0;
+}
+
+.md-body li {
+  margin: 0.25em 0;
+}
+
+.md-body strong { font-weight: 600; color: #0f172a; }
+.md-body em { font-style: italic; }
+
+.md-body code {
+  background: rgba(99, 102, 241, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.88em;
+  color: #4f46e5;
+}
+
+.md-body pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 0.85em;
+  margin: 0.8em 0;
+}
+
+.md-body pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
+.md-body blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 12px;
+  margin: 0.8em 0;
+  color: #64748b;
+}
+
+.md-body a {
+  color: #4f46e5;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-body hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.2em 0;
+}
+
+.md-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+  font-size: 0.9em;
+}
+
+.md-body th, .md-body td {
+  border: 1px solid #e2e8f0;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.md-body th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+.report-block .md-body {
+  max-height: 620px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(129, 140, 248, 0.6) rgba(226, 232, 240, 0.7);
 }
 
 .summary-block .block-pre,

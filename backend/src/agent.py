@@ -186,15 +186,27 @@ class DeepResearchAgent:
         self._tool_event_sink_enabled = sink is not None
         self._tool_tracker.set_event_sink(sink)
 
-    def run(self, topic:str)-> SummaryStateOutput:
+    def plan(self, topic: str) -> list[TodoItem]:
+        """仅生成研究任务规划，不执行搜索和总结。"""
+        state = SummaryState(research_topic=topic)
+        todo_items = self.planner.plan_todo_list(state)
+        self._drain_tool_events(state)
+        if not todo_items:
+            todo_items = [self.planner.create_fallback_task(state)]
+        return todo_items
+
+    def run(self, topic:str, todo_items: list[TodoItem] | None = None)-> SummaryStateOutput:
         """同步执行完整研究流程，返回最终报告。
         
         适合一次性获取完整结果的场景（非流式）。
         """
         state = SummaryState(research_topic=topic)
         # 第一步： 规划任务列表
-        state.todo_items = self.planner.plan_todo_list(state)
-        self._drain_tool_events(state)
+        if todo_items is not None:
+            state.todo_items = todo_items
+        else:
+            state.todo_items = self.planner.plan_todo_list(state)
+            self._drain_tool_events(state)
 
         
         if not state.todo_items:
@@ -227,7 +239,7 @@ class DeepResearchAgent:
             todo_items=state.todo_items,
         )
 
-    def run_stream(self, topic: str)-> Iterator[dict[str,Any]]:
+    def run_stream(self, topic: str, todo_items: list[TodoItem] | None = None)-> Iterator[dict[str,Any]]:
         """流式执行研究流程，通过 SSE 逐步推送进度事件。
         
         事件类型（type 字段）：
@@ -243,10 +255,13 @@ class DeepResearchAgent:
         logger.debug("开始流式研究： topic=%s",topic)
         yield {"type": "status", "message": "初始化研究流程"}
         
-        # 规划任务
-        state.todo_items = self.planner.plan_todo_list(state)
-        for event in self._drain_tool_events(state, step=0):
-            yield event
+        # 规划任务；如果调用方已传入任务清单，则直接执行确认后的规划。
+        if todo_items is not None:
+            state.todo_items = todo_items
+        else:
+            state.todo_items = self.planner.plan_todo_list(state)
+            for event in self._drain_tool_events(state, step=0):
+                yield event
         if not state.todo_items:
             state.todo_items = [self.planner.create_fallback_task(state=state)]
         

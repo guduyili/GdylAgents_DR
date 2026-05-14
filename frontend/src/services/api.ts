@@ -5,6 +5,19 @@ const baseURL =
 export interface ResearchRequest {
   topic: string;
   search_api?: string;
+  todo_items?: ResearchTodoItem[];
+}
+
+export interface ResearchTodoItem {
+  id?: number;
+  title: string;
+  intent: string;
+  query: string;
+}
+
+export interface ResearchPlanResponse {
+  topic: string;
+  todo_items: ResearchTodoItem[];
 }
 
 export interface ResearchStreamEvent {
@@ -106,6 +119,29 @@ export async function runResearchStream(
       break;
     }
   }
+}
+
+export async function planResearch(
+  payload: ResearchRequest,
+  options: StreamOptions = {}
+): Promise<ResearchPlanResponse> {
+  const response = await fetch(`${baseURL}/research/plan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload),
+    signal: options.signal
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      errorText || `研究规划失败，状态码：${response.status}`
+    );
+  }
+
+  return response.json();
 }
 
 /** 获取所有历史研究报告列表（conclusion 类型笔记） */

@@ -61,13 +61,14 @@
                 >
                   <circle cx="12" cy="12" r="9" stroke-width="3" />
                 </svg>
-                {{ loading ? "研究进行中..." : "开始研究" }}
+                {{ loading ? "处理中..." : planReady ? "重新生成计划" : "生成研究计划" }}
               </span>
             </button>
             <button
               type="button"
               class="submit history-submit-btn"
               style="margin-left: auto;"
+              :disabled="loading"
               @click="openHistoryPage"
             >
               历史记录
@@ -79,10 +80,57 @@
               class="secondary-btn"
               @click="cancelResearch"
             >
-              取消研究
+              {{ planning ? "取消规划" : "取消研究" }}
             </button>
           </div>
         </form>
+
+        <section v-if="planReady" class="plan-editor">
+          <div class="plan-editor-head">
+            <div>
+              <h2>确认研究计划</h2>
+              <p>可以调整任务标题、目标和检索 query；确认后才会开始执行。</p>
+            </div>
+            <span>{{ plannedTasks.length }} 个任务</span>
+          </div>
+
+          <ol class="plan-task-list">
+            <li v-for="(task, index) in plannedTasks" :key="task.localId" class="plan-task-card">
+              <div class="plan-task-meta">
+                <strong>任务 {{ index + 1 }}</strong>
+                <div class="plan-task-actions">
+                  <button type="button" class="mini-btn" :disabled="index === 0" @click="movePlannedTask(index, -1)">上移</button>
+                  <button type="button" class="mini-btn" :disabled="index === plannedTasks.length - 1" @click="movePlannedTask(index, 1)">下移</button>
+                  <button type="button" class="mini-btn danger" :disabled="plannedTasks.length <= 1" @click="removePlannedTask(index)">删除</button>
+                </div>
+              </div>
+              <label class="field compact">
+                <span>标题</span>
+                <input v-model="task.title" placeholder="任务标题" />
+              </label>
+              <label class="field compact">
+                <span>目标</span>
+                <textarea v-model="task.intent" placeholder="该任务要解决的问题" rows="2"></textarea>
+              </label>
+              <label class="field compact">
+                <span>检索 query</span>
+                <input v-model="task.query" placeholder="用于搜索的关键词" />
+              </label>
+            </li>
+          </ol>
+
+          <div class="plan-actions">
+            <button type="button" class="secondary-btn" @click="addPlannedTask">新增任务</button>
+            <button type="button" class="submit" :disabled="loading || !canStartResearch" @click="startResearchFromPlan">
+              <span class="submit-label">
+                <svg v-if="loading" class="spinner" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" stroke-width="3" />
+                </svg>
+                {{ loading ? "研究进行中..." : "确认并开始研究" }}
+              </span>
+            </button>
+          </div>
+        </section>
 
         <p v-if="error" class="error-chip">
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -425,9 +473,11 @@ function renderMd(src: string): string {
 }
 
 import {
+  planResearch,
   runResearchStream,
   listReports,
   getReport,
+  type ResearchTodoItem,
   type ResearchStreamEvent,
   type ReportItem,
   type ReportDetail
@@ -466,18 +516,27 @@ interface TodoTaskView {
   toolCalls: ToolCallLog[];
 }
 
+interface PlannedTaskView {
+  localId: number;
+  title: string;
+  intent: string;
+  query: string;
+}
+
 const form = reactive({
   topic: "",
   searchApi: ""
 });
 
 const loading = ref(false);
+const planning = ref(false);
 const error = ref("");
 const progressLogs = ref<string[]>([]);
 const logsCollapsed = ref(false);
 const isExpanded = ref(false);
 
 const todoTasks = ref<TodoTaskView[]>([]);
+const plannedTasks = ref<PlannedTaskView[]>([]);
 const activeTaskId = ref<number | null>(null);
 const reportMarkdown = ref("");
 
@@ -487,6 +546,7 @@ const reportHighlight = ref(false);
 const toolHighlight = ref(false);
 
 let currentController: AbortController | null = null;
+let nextPlannedTaskId = 1;
 
 // ── 历史报告 ──────────────────────────────────────
 const historyReports = ref<ReportItem[]>([]);
@@ -564,6 +624,12 @@ function formatTaskStatus(status: string): string {
 const totalTasks = computed(() => todoTasks.value.length);
 const completedTasks = computed(() =>
   todoTasks.value.filter((task) => task.status === "completed").length
+);
+const planReady = computed(() => plannedTasks.value.length > 0 && !isExpanded.value);
+const canStartResearch = computed(() =>
+  plannedTasks.value.some(
+    (task) => task.title.trim() && task.intent.trim() && task.query.trim()
+  )
 );
 
 const currentTask = computed(() => {
@@ -787,6 +853,10 @@ function resetWorkflowState() {
   logsCollapsed.value = false;
 }
 
+function clearPlannedTasks() {
+  plannedTasks.value = [];
+}
+
 function findTask(taskId: unknown): TodoTaskView | undefined {
   const numeric =
     typeof taskId === "number"
@@ -812,6 +882,97 @@ function upsertTaskMetadata(task: TodoTaskView, payload: Record<string, unknown>
   }
 }
 
+function createTaskView(item: Record<string, unknown>, index: number): TodoTaskView {
+  const rawId =
+    typeof item.id === "number"
+      ? item.id
+      : typeof item.id === "string"
+      ? Number(item.id)
+      : index + 1;
+  const id = Number.isFinite(rawId) ? Number(rawId) : index + 1;
+  const noteId =
+    typeof item.note_id === "string" && item.note_id.trim()
+      ? item.note_id.trim()
+      : null;
+  const notePath =
+    typeof item.note_path === "string" && item.note_path.trim()
+      ? item.note_path.trim()
+      : null;
+
+  return {
+    id,
+    title:
+      typeof item.title === "string" && item.title.trim()
+        ? item.title.trim()
+        : `任务${id}`,
+    intent:
+      typeof item.intent === "string" && item.intent.trim()
+        ? item.intent.trim()
+        : "探索与主题相关的关键信息",
+    query:
+      typeof item.query === "string" && item.query.trim()
+        ? item.query.trim()
+        : form.topic.trim(),
+    status:
+      typeof item.status === "string" && item.status.trim()
+        ? item.status.trim()
+        : "pending",
+    summary: "",
+    sourcesSummary: "",
+    sourceItems: [],
+    notices: [],
+    noteId,
+    notePath,
+    toolCalls: []
+  };
+}
+
+function setPlannedTasks(items: ResearchTodoItem[]) {
+  plannedTasks.value = items.map((item, index) => ({
+    localId: nextPlannedTaskId++,
+    title: item.title?.trim() || `任务${index + 1}`,
+    intent: item.intent?.trim() || "探索与主题相关的关键信息",
+    query: item.query?.trim() || form.topic.trim()
+  }));
+}
+
+function addPlannedTask() {
+  const index = plannedTasks.value.length + 1;
+  plannedTasks.value.push({
+    localId: nextPlannedTaskId++,
+    title: `补充任务${index}`,
+    intent: "补充用户关心但规划未覆盖的关键问题",
+    query: form.topic.trim()
+  });
+}
+
+function removePlannedTask(index: number) {
+  if (plannedTasks.value.length <= 1) {
+    return;
+  }
+  plannedTasks.value.splice(index, 1);
+}
+
+function movePlannedTask(index: number, direction: -1 | 1) {
+  const target = index + direction;
+  if (target < 0 || target >= plannedTasks.value.length) {
+    return;
+  }
+  const [task] = plannedTasks.value.splice(index, 1);
+  plannedTasks.value.splice(target, 0, task);
+}
+
+function buildConfirmedTodoItems(): ResearchTodoItem[] {
+  return plannedTasks.value
+    .map((task, index) => ({
+      id: index + 1,
+      title: task.title.trim(),
+      intent: task.intent.trim(),
+      query: task.query.trim() || form.topic.trim()
+    }))
+    .filter((task) => task.title && task.intent && task.query);
+}
+
 const handleSubmit = async () => {
   if (!form.topic.trim()) {
     error.value = "请输入研究主题";
@@ -824,8 +985,8 @@ const handleSubmit = async () => {
   }
 
   loading.value = true;
+  planning.value = true;
   error.value = "";
-  isExpanded.value = true;
   resetWorkflowState();
 
   const controller = new AbortController();
@@ -834,6 +995,66 @@ const handleSubmit = async () => {
   const payload = {
     topic: form.topic.trim(),
     search_api: form.searchApi || undefined
+  };
+
+  try {
+    const plan = await planResearch(payload, { signal: controller.signal });
+    setPlannedTasks(plan.todo_items);
+    if (!plannedTasks.value.length) {
+      error.value = "未生成有效任务规划，请调整主题后重试";
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      progressLogs.value.push("已取消研究规划");
+    } else {
+      error.value = err instanceof Error ? err.message : "研究规划失败";
+    }
+  } finally {
+    loading.value = false;
+    planning.value = false;
+    if (currentController === controller) {
+      currentController = null;
+    }
+  }
+};
+
+const startResearchFromPlan = async () => {
+  if (!form.topic.trim()) {
+    error.value = "请输入研究主题";
+    return;
+  }
+
+  const confirmedTasks = buildConfirmedTodoItems();
+  if (!confirmedTasks.length) {
+    error.value = "请至少保留一个完整任务";
+    return;
+  }
+
+  if (currentController) {
+    currentController.abort();
+    currentController = null;
+  }
+
+  loading.value = true;
+  planning.value = false;
+  error.value = "";
+  isExpanded.value = true;
+  resetWorkflowState();
+
+  todoTasks.value = confirmedTasks.map((item, index) =>
+    createTaskView({ ...item }, index)
+  );
+  if (todoTasks.value.length) {
+    activeTaskId.value = todoTasks.value[0].id;
+  }
+
+  const controller = new AbortController();
+  currentController = controller;
+
+  const payload = {
+    topic: form.topic.trim(),
+    search_api: form.searchApi || undefined,
+    todo_items: confirmedTasks
   };
 
   try {
@@ -861,50 +1082,7 @@ const handleSubmit = async () => {
             ? (event.tasks as Record<string, unknown>[])
             : [];
 
-          todoTasks.value = tasks.map((item, index) => {
-            const rawId =
-              typeof item.id === "number"
-                ? item.id
-                : typeof item.id === "string"
-                ? Number(item.id)
-                : index + 1;
-            const id = Number.isFinite(rawId) ? Number(rawId) : index + 1;
-            const noteId =
-              typeof item.note_id === "string" && item.note_id.trim()
-                ? item.note_id.trim()
-                : null;
-            const notePath =
-              typeof item.note_path === "string" && item.note_path.trim()
-                ? item.note_path.trim()
-                : null;
-
-            return {
-              id,
-              title:
-                typeof item.title === "string" && item.title.trim()
-                  ? item.title.trim()
-                  : `任务${id}`,
-              intent:
-                typeof item.intent === "string" && item.intent.trim()
-                  ? item.intent.trim()
-                  : "探索与主题相关的关键信息",
-              query:
-                typeof item.query === "string" && item.query.trim()
-                  ? item.query.trim()
-                  : form.topic.trim(),
-              status:
-                typeof item.status === "string" && item.status.trim()
-                  ? item.status.trim()
-                  : "pending",
-              summary: "",
-              sourcesSummary: "",
-              sourceItems: [],
-              notices: [],
-              noteId,
-              notePath,
-              toolCalls: []
-            } as TodoTaskView;
-          });
+          todoTasks.value = tasks.map((item, index) => createTaskView(item, index));
 
           if (todoTasks.value.length) {
             activeTaskId.value = todoTasks.value[0].id;
@@ -1108,7 +1286,7 @@ const cancelResearch = () => {
   if (!loading.value || !currentController) {
     return;
   }
-  progressLogs.value.push("正在尝试取消当前研究任务…");
+  progressLogs.value.push(planning.value ? "正在取消研究规划…" : "正在尝试取消当前研究任务…");
   currentController.abort();
 };
 
@@ -1124,6 +1302,7 @@ const startNewResearch = () => {
     cancelResearch();
   }
   resetWorkflowState();
+  clearPlannedTasks();
   isExpanded.value = false;
   form.topic = "";
   form.searchApi = "";
@@ -1425,6 +1604,115 @@ select:focus {
   background: rgba(148, 163, 184, 0.2);
   border-color: rgba(148, 163, 184, 0.35);
   color: #0f172a;
+}
+
+.plan-editor {
+  margin-top: 22px;
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.92), rgba(255, 255, 255, 0.96));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.plan-editor-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.plan-editor-head h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.plan-editor-head span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plan-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 48vh;
+  overflow-y: auto;
+}
+
+.plan-task-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  display: grid;
+  gap: 12px;
+}
+
+.plan-task-meta,
+.plan-actions,
+.plan-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.plan-task-meta {
+  justify-content: space-between;
+}
+
+.plan-actions {
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.field.compact {
+  gap: 6px;
+}
+
+.field.compact span {
+  font-size: 12px;
+}
+
+.field.compact input,
+.field.compact textarea {
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.mini-btn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: rgba(248, 250, 252, 0.9);
+  color: #334155;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mini-btn:hover:not(:disabled) {
+  background: #e0f2fe;
+  border-color: rgba(14, 165, 233, 0.35);
+}
+
+.mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mini-btn.danger {
+  color: #b91c1c;
 }
 
 .error-chip {

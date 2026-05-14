@@ -36,7 +36,7 @@ class Configuration(BaseModel):
     )
 
     search_api: SearchAPI = Field(
-        default=SearchAPI.DUCKDUCKGO,
+        default=SearchAPI.TAVILY,
         title="搜索API",
         description="使用的网络搜索后端",
     )

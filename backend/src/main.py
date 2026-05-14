@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from config import Configuration, SearchAPI
 from agent import DeepResearchAgent
+from models import TodoItem
 
 
 # ────────────────────────────────────────────────────
@@ -46,6 +47,26 @@ class ResearchRequest(BaseModel):
         default=None,
         description="覆盖环境变量中配置的搜索后端（可选）",
     )
+    todo_items: list["TodoItemRequest"] | None = Field(
+        default=None,
+        description="用户确认或编辑后的任务清单；为空时后端自动规划",
+    )
+
+
+class TodoItemRequest(BaseModel):
+    """前端提交的可编辑研究任务。"""
+
+    id: int | None = Field(default=None, description="任务编号，可由后端重新规范化")
+    title: str = Field(..., description="任务标题")
+    intent: str = Field(..., description="任务目标")
+    query: str = Field(..., description="检索查询")
+
+
+class ResearchPlanResponse(BaseModel):
+    """研究规划接口的响应体。"""
+
+    topic: str = Field(..., description="研究主题")
+    todo_items: list[dict[str, Any]] = Field(default_factory=list, description="规划任务列表")
 
 
 class ResearchResponse(BaseModel):
@@ -78,6 +99,47 @@ def _build_config(payload: ResearchRequest) -> Configuration:
     if payload.search_api is not None:
         overrides["search_api"] = payload.search_api
     return Configuration.from_env(overrides=overrides)
+
+
+def _normalize_todo_items(items: list[TodoItemRequest] | None, topic: str) -> list[TodoItem] | None:
+    """将前端提交的任务清单转换为内部 TodoItem，并重新分配连续 ID。"""
+    if items is None:
+        return None
+
+    normalized: list[TodoItem] = []
+    for index, item in enumerate(items, start=1):
+        title = item.title.strip()
+        intent = item.intent.strip()
+        query = item.query.strip() or topic.strip()
+        if not title or not intent or not query:
+            continue
+        normalized.append(
+            TodoItem(
+                id=index,
+                title=title,
+                intent=intent,
+                query=query,
+            )
+        )
+
+    if not normalized:
+        raise ValueError("任务清单不能为空")
+    return normalized
+
+
+def _serialize_todo_item(item: TodoItem) -> dict[str, Any]:
+    """将内部 TodoItem 转为 API 响应字典。"""
+    return {
+        "id": item.id,
+        "title": item.title,
+        "intent": item.intent,
+        "query": item.query,
+        "status": item.status,
+        "summary": item.summary,
+        "sources_summary": item.sources_summary,
+        "note_id": item.note_id,
+        "note_path": item.note_path,
+    }
 
 
 # ────────────────────────────────────────────────────
@@ -127,6 +189,24 @@ def create_app() -> FastAPI:
         """健康检查接口，供 k8s/负载均衡器探活使用。"""
         return {"status": "ok"}
 
+    @app.post("/research/plan", response_model=ResearchPlanResponse)
+    def plan_research(payload: ResearchRequest) -> ResearchPlanResponse:
+        """仅生成研究任务清单，供前端展示和编辑。"""
+        try:
+            config = _build_config(payload)
+            agent = DeepResearchAgent(config=config)
+            todo_items = agent.plan(payload.topic)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("研究规划生成失败")
+            raise HTTPException(status_code=500, detail="研究规划生成失败") from exc
+
+        return ResearchPlanResponse(
+            topic=payload.topic,
+            todo_items=[_serialize_todo_item(item) for item in todo_items],
+        )
+
     @app.post("/research", response_model=ResearchResponse)
     def run_research(payload: ResearchRequest) -> ResearchResponse:
         """同步研究接口：等待全部任务完成后返回完整报告。
@@ -135,8 +215,9 @@ def create_app() -> FastAPI:
         """
         try:
             config = _build_config(payload)
-            agent = DeepResearchAgent(config=config)
-            result = agent.run(payload.topic)
+            todo_items = _normalize_todo_items(payload.todo_items, payload.topic)
+            agent = DeepResearchAgent(config=config) 
+            result = agent.run(payload.topic, todo_items=todo_items)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
@@ -172,6 +253,7 @@ def create_app() -> FastAPI:
         """
         try:
             config = _build_config(payload)
+            todo_items = _normalize_todo_items(payload.todo_items, payload.topic)
             agent = DeepResearchAgent(config=config)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -179,7 +261,7 @@ def create_app() -> FastAPI:
         def event_iterator() -> Iterator[str]:
             """将 Agent 的事件字典序列化为 SSE 格式字符串逐条推送。"""
             try:
-                for event in agent.run_stream(payload.topic):
+                for event in agent.run_stream(payload.topic, todo_items=todo_items):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except Exception as exc:
                 logger.exception("流式研究执行失败")

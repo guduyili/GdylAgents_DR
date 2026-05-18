@@ -236,23 +236,24 @@
         </div>
       </aside>
 
-      <!-- 右侧：研究结果 -->
+      <!-- 右侧：卡片化研究工作台 -->
       <section
-        class="panel panel-result"
+        class="panel panel-result research-board"
         v-if="todoTasks.length || reportMarkdown || progressLogs.length"
       >
-        <header class="status-bar">
-          <div class="status-main">
+        <header class="status-bar board-hero">
+          <div>
+            <p class="card-kicker">Research Workspace</p>
+            <h2>卡片化研究工作台</h2>
+            <p class="board-subtitle">
+              任务、来源、笔记、工具调用与报告按研究阶段拆分展示。
+            </p>
+          </div>
+          <div class="status-controls">
             <div class="status-chip" :class="{ active: loading }">
               <span class="dot"></span>
               {{ loading ? "研究进行中" : "研究流程完成" }}
             </div>
-            <span class="status-meta">
-              任务进度：{{ completedTasks }} / {{ totalTasks || todoTasks.length || 1 }}
-              · 阶段记录 {{ progressLogs.length }} 条
-            </span>
-          </div>
-          <div class="status-controls">
             <button class="secondary-btn" @click="logsCollapsed = !logsCollapsed">
               {{ logsCollapsed ? "展开流程" : "收起流程" }}
             </button>
@@ -266,75 +267,121 @@
           </div>
         </header>
 
-        <div class="timeline-wrapper" v-show="!logsCollapsed && progressLogs.length">
-          <transition-group name="timeline" tag="ul" class="timeline">
-            <li v-for="(log, index) in progressLogs" :key="`${log}-${index}`">
-              <span class="timeline-node"></span>
-              <p>{{ log }}</p>
-            </li>
-          </transition-group>
-        </div>
+        <section class="research-overview-grid">
+          <article class="metric-card primary">
+            <span>任务进度</span>
+            <strong>{{ completedTasks }} / {{ totalTasks || todoTasks.length || 1 }}</strong>
+            <p>已完成任务</p>
+          </article>
+          <article class="metric-card">
+            <span>流程记录</span>
+            <strong>{{ progressLogs.length }}</strong>
+            <p>实时事件</p>
+          </article>
+          <article class="metric-card">
+            <span>当前任务</span>
+            <strong>{{ currentTaskTitle || "等待中" }}</strong>
+            <p>{{ currentTask ? formatTaskStatus(currentTask.status) : "未开始" }}</p>
+          </article>
+          <article class="metric-card">
+            <span>报告状态</span>
+            <strong>{{ reportMarkdown ? "已生成" : loading ? "生成中" : "待生成" }}</strong>
+            <p>{{ form.searchApi || "后端默认搜索" }}</p>
+          </article>
+        </section>
 
-        <div class="tasks-section" v-if="todoTasks.length">
-          <aside class="tasks-list">
-            <h3>任务清单</h3>
-            <ul>
-              <li
-                v-for="task in todoTasks"
-                :key="task.id"
-                :class="['task-item', { active: task.id === activeTaskId, completed: task.status === 'completed' }]"
-              >
-                <button
-                  type="button"
-                  class="task-button"
-                  @click="activeTaskId = task.id"
-                >
-                  <span class="task-title">{{ task.title }}</span>
-                  <span class="task-status" :class="task.status">
-                    {{ formatTaskStatus(task.status) }}
-                  </span>
-                </button>
-                <p class="task-intent">{{ task.intent }}</p>
+        <section
+          class="timeline-card workspace-card"
+          v-show="!logsCollapsed && progressLogs.length"
+        >
+          <div class="card-title-row">
+            <div>
+              <p class="card-kicker">Timeline</p>
+              <h3>流程动态</h3>
+            </div>
+            <span class="status-meta">{{ progressLogs.length }} 条记录</span>
+          </div>
+          <div class="timeline-wrapper">
+            <transition-group name="timeline" tag="ul" class="timeline">
+              <li v-for="(log, index) in progressLogs" :key="`${log}-${index}`">
+                <span class="timeline-node"></span>
+                <p>{{ log }}</p>
               </li>
-            </ul>
-          </aside>
+            </transition-group>
+          </div>
+        </section>
 
-          <article class="task-detail" v-if="currentTask">
+        <section class="task-card-board" v-if="todoTasks.length">
+          <button
+            v-for="task in todoTasks"
+            :key="task.id"
+            type="button"
+            :class="[
+              'task-card',
+              task.status,
+              { active: task.id === activeTaskId }
+            ]"
+            @click="activeTaskId = task.id"
+          >
+            <div class="task-card-head">
+              <span class="task-index">任务 {{ task.id }}</span>
+              <span class="task-status" :class="task.status">
+                {{ formatTaskStatus(task.status) }}
+              </span>
+            </div>
+            <h3>{{ task.title }}</h3>
+            <p>{{ task.intent }}</p>
+            <div class="task-query">Query：{{ task.query }}</div>
+            <div class="task-card-meta">
+              <span>{{ task.sourceItems.length }} 个来源</span>
+              <span>{{ task.toolCalls.length }} 次工具</span>
+              <span v-if="task.noteId">已写笔记</span>
+            </div>
+          </button>
+        </section>
+
+        <section class="focus-grid" v-if="currentTask">
+          <article class="task-detail task-focus-card workspace-card">
             <header class="task-header">
               <div>
+                <p class="card-kicker">Current Task</p>
                 <h3>{{ currentTaskTitle || "当前任务" }}</h3>
                 <p class="muted" v-if="currentTaskIntent">
                   {{ currentTaskIntent }}
                 </p>
               </div>
-              <div class="task-chip-group">
-                <span class="task-label">查询：{{ currentTaskQuery || "" }}</span>
-                <span
-                  v-if="currentTaskNoteId"
-                  class="task-label note-chip"
-                  :title="currentTaskNoteId"
-                >
-                  笔记：{{ currentTaskNoteId }}
-                </span>
-                <span
-                  v-if="currentTaskNotePath"
-                  class="task-label note-chip path-chip"
-                  :title="currentTaskNotePath"
-                >
-                  <span class="path-label">路径：</span>
-                  <span class="path-text">{{ currentTaskNotePath }}</span>
-                  <button
-                    class="chip-action"
-                    type="button"
-                    @click="copyNotePath(currentTaskNotePath)"
-                  >
-                    复制
-                  </button>
-                </span>
-              </div>
+              <span class="task-status" :class="currentTask.status">
+                {{ formatTaskStatus(currentTask.status) }}
+              </span>
             </header>
 
-            <section v-if="currentTask && currentTask.notices.length" class="task-notices">
+            <div class="task-chip-group">
+              <span class="task-label">查询：{{ currentTaskQuery || "" }}</span>
+              <span
+                v-if="currentTaskNoteId"
+                class="task-label note-chip"
+                :title="currentTaskNoteId"
+              >
+                笔记：{{ currentTaskNoteId }}
+              </span>
+              <span
+                v-if="currentTaskNotePath"
+                class="task-label note-chip path-chip"
+                :title="currentTaskNotePath"
+              >
+                <span class="path-label">路径：</span>
+                <span class="path-text">{{ currentTaskNotePath }}</span>
+                <button
+                  class="chip-action"
+                  type="button"
+                  @click="copyNotePath(currentTaskNotePath)"
+                >
+                  复制
+                </button>
+              </span>
+            </div>
+
+            <section v-if="currentTask.notices.length" class="task-notices">
               <h4>系统提示</h4>
               <ul>
                 <li v-for="(notice, idx) in currentTask.notices" :key="`${notice}-${idx}`">
@@ -344,16 +391,37 @@
             </section>
 
             <section
-              class="sources-block"
+              class="summary-block"
+              :class="{ 'block-highlight': summaryHighlight }"
+            >
+              <div class="card-title-row">
+                <div>
+                  <p class="card-kicker">Summary</p>
+                  <h3>任务总结</h3>
+                </div>
+              </div>
+              <pre class="block-pre">{{ currentTaskSummary || "暂无可用信息" }}</pre>
+            </section>
+          </article>
+
+          <aside class="focus-side">
+            <section
+              class="sources-block workspace-card"
               :class="{ 'block-highlight': sourcesHighlight }"
             >
-              <h3>最新来源</h3>
+              <div class="card-title-row">
+                <div>
+                  <p class="card-kicker">Sources</p>
+                  <h3>最新来源</h3>
+                </div>
+                <span class="status-meta">{{ currentTaskSources.length }} 条</span>
+              </div>
               <template v-if="currentTaskSources.length">
-                <ul class="sources-list">
+                <ul class="sources-list source-card-list">
                   <li
                     v-for="(item, index) in currentTaskSources"
                     :key="`${item.title}-${index}`"
-                    class="source-item"
+                    class="source-item source-card"
                   >
                     <a
                       class="source-link"
@@ -363,9 +431,9 @@
                     >
                       {{ item.title || item.url || `来源 ${index + 1}` }}
                     </a>
-                    <div v-if="item.snippet || item.raw" class="source-tooltip">
-                      <p v-if="item.snippet">{{ item.snippet }}</p>
-                      <p v-if="item.raw" class="muted-text">{{ item.raw }}</p>
+                    <p v-if="item.snippet" class="source-snippet">{{ item.snippet }}</p>
+                    <div v-if="item.raw" class="source-tooltip">
+                      <p class="muted-text">{{ item.raw }}</p>
                     </div>
                   </li>
                 </ul>
@@ -373,8 +441,7 @@
               <p v-else class="muted">暂无可用来源</p>
             </section>
 
-            <!-- sources_summary 折叠区块 -->
-            <section v-if="currentTask?.sourcesSummary" class="sources-summary-block">
+            <section v-if="currentTask.sourcesSummary" class="sources-summary-block workspace-card">
               <button
                 class="collapsible-header"
                 type="button"
@@ -389,19 +456,17 @@
             </section>
 
             <section
-              class="summary-block"
-              :class="{ 'block-highlight': summaryHighlight }"
-            >
-              <h3>任务总结</h3>
-              <pre class="block-pre">{{ currentTaskSummary || "暂无可用信息" }}</pre>
-            </section>
-
-            <section
-              class="tools-block"
+              class="tools-block workspace-card"
               :class="{ 'block-highlight': toolHighlight }"
               v-if="currentTaskToolCalls.length"
             >
-              <h3>工具调用记录</h3>
+              <div class="card-title-row">
+                <div>
+                  <p class="card-kicker">Tools</p>
+                  <h3>工具调用记录</h3>
+                </div>
+                <span class="status-meta">{{ currentTaskToolCalls.length }} 次</span>
+              </div>
               <ul class="tool-list">
                 <li
                   v-for="entry in currentTaskToolCalls"
@@ -439,21 +504,26 @@
                 </li>
               </ul>
             </section>
-          </article>
+          </aside>
+        </section>
 
-          <article class="task-detail" v-else>
-            <p class="muted">等待任务规划或执行结果。</p>
-          </article>
-        </div>
+        <article class="empty-card workspace-card" v-else>
+          <p class="muted">等待任务规划或执行结果。</p>
+        </article>
 
-        <div
+        <article
           v-if="reportMarkdown"
-          class="report-block"
+          class="report-block report-card workspace-card"
           :class="{ 'block-highlight': reportHighlight }"
         >
-          <h3>最终报告</h3>
+          <div class="card-title-row">
+            <div>
+              <p class="card-kicker">Final Report</p>
+              <h3>最终报告</h3>
+            </div>
+          </div>
           <div class="block-pre md-body" v-html="renderMd(reportMarkdown)"></div>
-        </div>
+        </article>
       </section>
 
     </div>
@@ -1436,6 +1506,13 @@ onMounted(() => {
   flex: 2 1 420px;
 }
 
+.research-board {
+  background:
+    linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(239, 246, 255, 0.96)),
+    radial-gradient(circle at 10% 10%, rgba(14, 165, 233, 0.12), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(37, 99, 235, 0.1), transparent 30%);
+}
+
 .panel::before {
   content: "";
   position: absolute;
@@ -1748,6 +1825,40 @@ select:focus {
   flex-wrap: wrap;
 }
 
+.board-hero {
+  align-items: flex-start;
+  padding: 22px;
+  border-radius: 26px;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 64, 175, 0.88)),
+    radial-gradient(circle at 80% 10%, rgba(125, 211, 252, 0.2), transparent 28%);
+  color: #eff6ff;
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.18);
+}
+
+.board-hero h2 {
+  margin: 4px 0 8px;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.board-subtitle {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 14px;
+}
+
+.board-hero .secondary-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+}
+
+.board-hero .secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
 .status-main {
   display: flex;
   align-items: center;
@@ -1779,6 +1890,18 @@ select:focus {
   color: #1e293b;
 }
 
+.board-hero .status-chip {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #f8fafc;
+}
+
+.board-hero .status-chip.active {
+  background: rgba(125, 211, 252, 0.18);
+  border-color: rgba(125, 211, 252, 0.38);
+  color: #f8fafc;
+}
+
 .status-chip .dot {
   width: 8px;
   height: 8px;
@@ -1791,6 +1914,107 @@ select:focus {
 .status-meta {
   color: #64748b;
   font-size: 13px;
+}
+
+.research-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card,
+.workspace-card {
+  position: relative;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.metric-card {
+  min-height: 128px;
+  padding: 18px;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.metric-card::after {
+  content: "";
+  position: absolute;
+  right: -28px;
+  bottom: -34px;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.metric-card.primary {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.96), rgba(14, 165, 233, 0.86));
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.metric-card span,
+.card-kicker {
+  display: block;
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.metric-card.primary span,
+.metric-card.primary p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.metric-card strong {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 10px;
+  color: #0f172a;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.metric-card.primary strong {
+  color: #ffffff;
+}
+
+.metric-card p {
+  position: relative;
+  z-index: 1;
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.workspace-card {
+  border-radius: 24px;
+}
+
+.card-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.card-title-row h3 {
+  margin: 4px 0 0;
+  color: #0f172a;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.timeline-card {
+  padding: 20px;
 }
 
 .timeline-wrapper {
@@ -1871,74 +2095,77 @@ select:focus {
   transform: translateY(-6px);
 }
 
-.tasks-section {
+.task-card-board {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 20px;
-  align-items: start;
-}
-
-@media (max-width: 960px) {
-  .tasks-section {
-    grid-template-columns: 1fr;
-  }
-}
-
-.tasks-list {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 18px;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.4);
 }
 
-.tasks-list h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2937;
+.task-card {
+  min-height: 210px;
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92)),
+    radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.12), transparent 30%);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.tasks-list ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.task-card:hover,
+.task-card.active {
+  transform: translateY(-3px);
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 24px 48px rgba(37, 99, 235, 0.14);
 }
 
-.task-item {
-  border-radius: 14px;
-  border: 1px solid transparent;
-  transition: border-color 0.2s ease, background 0.2s ease;
+.task-card.completed {
+  background:
+    linear-gradient(145deg, rgba(240, 253, 244, 0.96), rgba(255, 255, 255, 0.94)),
+    radial-gradient(circle at 100% 0%, rgba(34, 197, 94, 0.14), transparent 32%);
 }
 
-.task-item.completed {
-  border-color: rgba(56, 189, 248, 0.35);
-  background: rgba(191, 219, 254, 0.28);
+.task-card.in_progress {
+  background:
+    linear-gradient(145deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.94)),
+    radial-gradient(circle at 100% 0%, rgba(99, 102, 241, 0.18), transparent 34%);
 }
 
-.task-item.active {
-  border-color: rgba(129, 140, 248, 0.5);
-  background: rgba(224, 231, 255, 0.5);
-}
-
-.task-button {
-  width: 100%;
+.task-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px 6px;
-  background: transparent;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
+  margin-bottom: 16px;
+}
+
+.task-index {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.task-card p {
+  display: -webkit-box;
+  min-height: 42px;
+  margin: 10px 0 12px;
+  overflow: hidden;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .task-title {
@@ -1979,22 +2206,55 @@ select:focus {
   color: #b91c1c;
 }
 
-.task-intent {
-  margin: 0;
-  padding: 0 14px 12px 14px;
+.task-query {
+  margin-top: auto;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.04);
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.task-card-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.task-card-meta span {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #1d4ed8;
   font-size: 13px;
-  color: #64748b;
+  font-weight: 600;
+}
+
+.focus-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  align-items: start;
 }
 
 .task-detail {
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 18px;
+  border-radius: 24px;
   padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.5);
+}
+
+.task-focus-card {
+  min-height: 420px;
+}
+
+.focus-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .task-header {
@@ -2106,13 +2366,17 @@ select:focus {
 }
 
 .report-block {
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 18px;
+  border-radius: 24px;
   padding: 22px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.report-card {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(240, 249, 255, 0.94)),
+    radial-gradient(circle at 95% 10%, rgba(14, 165, 233, 0.14), transparent 26%);
 }
 
 .report-block h3 {
@@ -2273,12 +2537,7 @@ select:focus {
 
 .tools-block {
   position: relative;
-  margin-top: 16px;
   padding: 20px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.4);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2396,12 +2655,8 @@ select:focus {
 .sources-block,
 .summary-block {
   position: relative;
-  margin-top: 16px;
   padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.4);
+  border-radius: 22px;
 }
 
 .sources-history {
@@ -2484,11 +2739,33 @@ select:focus {
   gap: 10px;
 }
 
+.source-card-list {
+  gap: 12px;
+}
+
 .source-item {
   position: relative;
   display: inline-flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.source-card {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.source-snippet {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .source-link {
@@ -2644,6 +2921,14 @@ select:focus {
   .status-controls {
     justify-content: flex-start;
   }
+
+  .research-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .focus-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 600px) {
@@ -2662,6 +2947,19 @@ select:focus {
 
   .panel-form h1 {
     font-size: 24px;
+  }
+
+  .research-overview-grid,
+  .task-card-board {
+    grid-template-columns: 1fr;
+  }
+
+  .board-hero {
+    padding: 18px;
+  }
+
+  .board-hero h2 {
+    font-size: 22px;
   }
 }
 

@@ -9,7 +9,7 @@ from queue import Empty, Queue
 from threading import Lock, Thread
 from typing import Any, Callable, Iterator
 
-from hello_agents import HelloAgentsLLM, ToolAwareSimpleAgent
+from hello_agents import ToolAwareSimpleAgent
 from hello_agents.tools import ToolRegistry
 from hello_agents.tools.builtin.note_tool import NoteTool
 
@@ -20,6 +20,7 @@ from prompts import (
     todo_planner_system_prompt,
 )
 from models import SummaryState, SummaryStateOutput, TodoItem
+from services.llm_factory import create_llm
 from services.planner import PlanningService
 from services.reporter import ReportingService
 from services.search import dispatch_search, prepare_research_context
@@ -37,7 +38,7 @@ class DeepResearchAgent:
     
     工作流程：
     1. 规划（planner）：将用户主题拆解为 3~5 个子任务
-    2. 执行（per task）：搜索 → 总结
+    2. 执行（单任务）：搜索 → 总结
     3. 报告（reporter）：汇总所有任务结果，生成最终报告
     """
 
@@ -46,7 +47,7 @@ class DeepResearchAgent:
         初始化协调器：加载配置、创建 LLM、初始化笔记和各服务。
         """
         self.config = config or Configuration.from_env()
-        self.llm = self.__init__llm()              # 根据配置创建 HelloAgentsLLM 实例
+        self.llm = create_llm(self.config)              # 根据配置创建 HelloAgentsLLM 实例
         
         # 如果启用笔记功能，初始化 NoteTool 和工具注册表
         self.note_tool = (
@@ -61,7 +62,7 @@ class DeepResearchAgent:
             registry.register_tool(self.note_tool)
             self.tools_registry = registry
 
-        # 工具调用事件追踪器: 用于收集Agent的工具调用记录并推送给前端
+        # 工具调用事件追踪器：用于收集 Agent 的工具调用记录并推送给前端
         self._tool_tracker = ToolCallTracker(
             self.config.notes_workspace if self.config.enable_notes else None
         )
@@ -102,46 +103,6 @@ class DeepResearchAgent:
         self._last_search_notices: list[str] = []
 
 
-    # ------------------------------------------------------------------
-    # 公开 API
-    # ------------------------------------------------------------------
-    def __init__llm(self) -> HelloAgentsLLM:
-        """根据配置实例化 HelloAgentsLLM。
-        
-        支持三种模式：
-        - ollama：本地 Ollama 服务
-        - lmstudio：本地 LMStudio 服务
-        - custom（默认）：任意 OpenAI 兼容接口
-        """
-        llm_kwargs: dict[str, Any] = {"temperature":0.0}    #研究场景使用低温保证稳定性
-
-        # 优先使用 llm_model_id 回退到 local_llm （Ollama/LMStudio 的模型名）
-        model_id = self.config.llm_model_id or self.config.local_llm
-        if model_id:
-            llm_kwargs["model"] = model_id
-
-        provider = (self.config.llm_provider or "").strip()
-        if provider:
-            llm_kwargs["provider"] = provider
-
-        if provider == "ollama":
-            llm_kwargs["base_url"] = self.config.sanitized_ollama_url()
-            llm_kwargs["api_key"] = self.config.llm_api_key or "ollama"
-        elif provider == "lmstudio":
-            llm_kwargs["base_url"] = self.config.lmstudio_base_url
-            if self.config.llm_api_key:
-                llm_kwargs["api_key"] = self.config.llm_api_key
-
-        else:
-            # custom 或其他 直接使用配置中的base_url 和 api_key
-            if self.config.llm_base_url:
-                llm_kwargs["base_url"] = self.config.llm_base_url
-            if self.config.llm_api_key:
-                llm_kwargs["api_key"] = self.config.llm_api_key
-
-        return HelloAgentsLLM(**llm_kwargs)
-
-
     def _create_tool_aware_agent(self, *, name: str, system_prompt: str, model_override: str | None = None) -> ToolAwareSimpleAgent:
         """
         创建共享LLM和工具注册表的ToolAwareSimpleAgent 实例。
@@ -149,7 +110,7 @@ class DeepResearchAgent:
         """
         if model_override and model_override != self.config.resolved_model():
             # 用相同连接参数，只换 model 名称
-            llm = self.__init__llm_with_model(model_override)
+            llm = create_llm(self.config, model_override=model_override)
         else:
             llm = self.llm
         return ToolAwareSimpleAgent(
@@ -160,26 +121,6 @@ class DeepResearchAgent:
             tool_registry=self.tools_registry,
             tool_call_listener=self._tool_tracker.record,
         )
-
-    def __init__llm_with_model(self, model_id: str) -> HelloAgentsLLM:
-        """用与主 LLM 相同的连接配置，但替换 model 名称，创建新的 LLM 实例。"""
-        llm_kwargs: dict[str, Any] = {"temperature": 0.0, "model": model_id}
-        provider = (self.config.llm_provider or "").strip()
-        if provider:
-            llm_kwargs["provider"] = provider
-        if provider == "ollama":
-            llm_kwargs["base_url"] = self.config.sanitized_ollama_url()
-            llm_kwargs["api_key"] = self.config.llm_api_key or "ollama"
-        elif provider == "lmstudio":
-            llm_kwargs["base_url"] = self.config.lmstudio_base_url
-            if self.config.llm_api_key:
-                llm_kwargs["api_key"] = self.config.llm_api_key
-        else:
-            if self.config.llm_base_url:
-                llm_kwargs["base_url"] = self.config.llm_base_url
-            if self.config.llm_api_key:
-                llm_kwargs["api_key"] = self.config.llm_api_key
-        return HelloAgentsLLM(**llm_kwargs)
 
     def _set_tool_event_sink(self, sink: Callable[[dict[str,Any]], None]| None)->None:
         """启用或禁用工具事件的实时回调（流式模式下使用）。"""
@@ -265,7 +206,7 @@ class DeepResearchAgent:
         if not state.todo_items:
             state.todo_items = [self.planner.create_fallback_task(state=state)]
         
-        # 为每个任务分配 step编号和 stream_token （前端用于区分不同任务的流）
+        # 为每个任务分配步骤编号和流标识（前端用于区分不同任务的输出流）
         channel_map: dict[int,dict[str, Any]] = {}
         for index,task in enumerate(state.todo_items, start=1):
             token = f"task_{task.id}"
@@ -287,7 +228,7 @@ class DeepResearchAgent:
             task: TodoItem | None = None,
             step_override: int | None = None,
         ) -> None:
-            """将事件加入队列，自动附加 task_id 和 stream_token。"""
+            """将事件加入队列，自动附加任务 ID 和流标识。"""
             payload = dict(event)
             target_task_id = payload.get("task_id")
             if task is not None:
@@ -314,7 +255,7 @@ class DeepResearchAgent:
 
         def worker(task: TodoItem, step: int)->None:
             """
-            每个任务在独立线程中进行，完成后发松__task_done__ 信号
+            每个任务在独立线程中执行，完成后发送内部任务完成信号。
             """
             try:
                 enqueue(
@@ -360,7 +301,7 @@ class DeepResearchAgent:
         active_workers = len(state.todo_items)
         finished_workers = 0
 
-        # 主线程丛队列消费事件，推送给前端，直到所有任务完成
+        # 主线程从队列消费事件，推送给前端，直到所有任务完成
         try:
             while finished_workers < active_workers:
                 event = event_queue.get()
@@ -550,7 +491,7 @@ class DeepResearchAgent:
         step: int| None = None)->list[dict[str,Any]]:
         """从工具追踪器中提取尚未消费的事件。
         
-        流式模式下事件由 sink 实时推送，此方法返回空列表；
+        流式模式下事件由事件接收器实时推送，此方法返回空列表；
         同步模式下此方法负责推送积压的事件。
         """
         events = self._tool_tracker.drain(state,step=step)
@@ -650,7 +591,7 @@ class DeepResearchAgent:
         if state.report_note_id:
             return state.report_note_id
 
-        # 从工具调用历史中反向查找 conclusion 类型的笔记
+        # 从工具调用历史中反向查找最终报告类型的笔记
         for event in reversed(self._tool_tracker.as_dicts()):
             if event.get("tool") != "note":
                 continue

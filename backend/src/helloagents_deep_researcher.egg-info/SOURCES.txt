@@ -4,7 +4,14 @@ src/helloagents_deep_researcher.egg-info/SOURCES.txt
 src/helloagents_deep_researcher.egg-info/dependency_links.txt
 src/helloagents_deep_researcher.egg-info/requires.txt
 src/helloagents_deep_researcher.egg-info/top_level.txt
+src/services/llm_factory.py
+src/services/notes.py
 src/services/planner.py
+src/services/report_store.py
 src/services/reporter.py
 src/services/search.py
 src/services/summarizer.py
+src/services/text_processing.py
+src/services/tool_events.py
+tests/test_config.py
+tests/test_main.py

@@ -145,10 +145,20 @@ GET  /notes/reports/{note_id}
 
 ## 测试
 
-后端测试：
+后端测试推荐使用 uv 安装 dev 依赖并运行：
 
 ```bash
 cd backend
+uv run --extra dev python -m pytest -q
+```
+
+如果使用手动虚拟环境：
+
+```bash
+cd backend
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 python -m pytest -q
 ```
 
@@ -161,19 +171,154 @@ npm run build
 
 ## 当前重点优化方向
 
-1. 工程卫生：修复 .gitignore、清理运行产物、补齐 .env.example。
-2. 测试体系：先为 config.py、utils.py、planner.py、tool_events.py、main.py 写低成本单元测试。
-3. 前端拆分：逐步把大型 App.vue 拆成 ResearchForm、PlanEditor、HistoryPage、ReportViewer 等组件。
-4. 后端拆分：继续把 agent.py 中的 LLM 创建、任务执行、流式运行、报告存储拆成独立服务。
-5. 稳定性：为 SSE 事件定义前后端强类型协议，增加并发限制、timeout 和搜索 fallback。
+当前阶段暂时不优先做运行产物清理，先从 Agent 架构拆分开始优化。推荐顺序如下：
+
+1. 后端 Agent 拆分：先把 `agent.py` 中的 LLM 创建、工具注册、任务执行、流式运行、报告持久化拆成独立服务。
+2. 测试体系：每拆出一个服务，就补一组低成本单元测试，保证重构不改变行为。
+3. SSE 协议稳定性：为前后端事件定义强类型协议，减少 `type: string` 和任意字段带来的维护风险。
+4. 并发与 timeout：限制最大并发任务数，为搜索、总结、报告生成增加超时和 fallback。
+5. 可观测性与评估：增加 run_id、阶段耗时、任务 trace，并建立最小 eval 用例集。
+6. 前端拆分：继续把大型页面拆成 ResearchForm、PlanEditor、ResearchBoard、HistoryPage、ReportViewer 等组件。
+
+### 方向一：后端 Agent 拆分
+
+`backend/src/agent.py` 当前承担了过多职责：
+
+- LLM 初始化
+- NoteTool 与 ToolRegistry 初始化
+- Planner / Summarizer / Reporter Agent 创建
+- 同步研究流程
+- SSE 流式研究流程
+- 多线程任务调度
+- 单任务搜索与总结
+- 最终报告持久化
+- note_id 提取与 task 序列化
+
+拆分目标不是重写项目，而是让 `DeepResearchAgent` 回到“编排入口”的角色。建议逐步拆成：
+
+| 模块 | 职责 |
+|---|---|
+| `services/llm_factory.py` | 根据 `Configuration` 创建主 LLM 和报告 LLM，统一处理 ollama / lmstudio / custom provider |
+| `services/tool_registry_factory.py` | 创建 NoteTool、ToolRegistry，并集中管理工具注册 |
+| `services/task_executor.py` | 执行单个任务：搜索、准备上下文、总结、更新任务状态 |
+| `services/stream_runner.py` | 管理 SSE 队列、多线程 worker、stream_token、任务完成信号 |
+| `services/report_store.py` / `report_persistence.py` | 负责最终报告写入、读取、防路径穿越和报告事件构造 |
+
+当前已开始第一步：抽出 `services/llm_factory.py`，让 LLM 参数构造和实例创建从 `agent.py` 中独立出来。
+
+建议后续每次只拆一个职责，并遵循：
+
+1. 先写针对新服务的测试。
+2. 确认测试因为模块或行为缺失而失败。
+3. 实现最小代码让测试通过。
+4. 再接入 `DeepResearchAgent`。
+5. 跑完整后端测试，确认没有行为回归。
+
+### 方向二：SSE 强类型协议
+
+前端当前事件类型如果仍使用宽泛结构：
+
+```ts
+export interface ResearchStreamEvent {
+  type: string;
+  [key: string]: unknown;
+}
+```
+
+后续维护成本会越来越高。建议改为联合类型：
+
+```ts
+export type ResearchStreamEvent =
+  | StatusEvent
+  | TodoListEvent
+  | SourcesEvent
+  | TaskSummaryChunkEvent
+  | TaskStatusEvent
+  | ToolCallEvent
+  | ReportNoteEvent
+  | FinalReportEvent
+  | DoneEvent
+  | ErrorEvent;
+```
+
+这样前端在处理 `event.type` 时可以获得类型收窄，后端也可以用 Pydantic 模型约束事件结构。
+
+### 方向三：并发、timeout 与 fallback
+
+当前流式执行会为每个任务启动 worker。后续建议增加：
+
+- `MAX_CONCURRENT_TASKS`：限制最大并发任务数。
+- `SEARCH_TIMEOUT_SECONDS`：搜索超时。
+- `SUMMARY_TIMEOUT_SECONDS`：单任务总结超时。
+- `REPORT_TIMEOUT_SECONDS`：最终报告生成超时。
+- 搜索 fallback：Tavily 失败后降级 DuckDuckGo / SearXNG。
+- 报告 fallback：报告模型失败时，用任务摘要生成兜底报告。
+
+这些能力能让 Agent 从 demo 更接近稳定服务。
+
+### 方向四：可观测性
+
+建议为每次研究生成 `run_id`，并让所有事件都带上：
+
+- `run_id`
+- `task_id`
+- `event_type`
+- `step`
+- `started_at`
+- `finished_at`
+- `duration_ms`
+
+前端可以增加 Debug / Trace 面板，展示每个阶段耗时、搜索来源数、工具调用次数、报告 note_id 等信息。
+
+### 方向五：Agent 评估体系
+
+不要只靠主观感觉判断 Agent 效果。建议新增：
+
+```text
+backend/evals/
+├── cases.jsonl
+└── run_eval.py
+```
+
+最小评估指标：
+
+- 是否成功生成最终报告
+- 是否完成所有任务
+- 是否包含 sources
+- 是否包含预期章节
+- 是否出现空摘要
+- 总耗时是否可接受
+
+这样后续改 prompt、换模型、改搜索策略时，可以比较优化前后的效果。
 
 ## 学习建议
 
 初学者建议按以下顺序学习：
 
-1. Git、.gitignore、.env 和工程目录卫生。
-2. FastAPI 的 BaseModel、HTTPException、StreamingResponse。
-3. Python 单元测试和 pytest。
-4. Vue 3 组件拆分与 TypeScript 类型。
+1. FastAPI 的 BaseModel、HTTPException、StreamingResponse。
+2. Python 单元测试、pytest 和 TDD 重构节奏。
+3. Agent 编排：Planner、Search、Summarizer、Reporter 的职责边界。
+4. 工具调用：工具 schema、工具返回值、工具失败处理、工具调用追踪。
 5. SSE 流式协议和前后端事件契约。
-6. Agent 编排、并发控制、搜索 fallback 和可观测性。
+6. 并发控制、timeout、fallback 和可观测性。
+7. Agent 评估：用固定 case 验证 prompt、模型和搜索策略是否真的变好。
+8. 横向扩展：Browser Agent、Coding Agent、Multi-Agent 流水线。
+
+### 8 周学习路线
+
+| 周次 | 目标 | 练习 |
+|---|---|---|
+| 第 1 周 | 稳定测试与理解项目结构 | 跑通后端测试和前端构建，读 `main.py`、`agent.py`、`services/*` |
+| 第 2 周 | 拆分 `agent.py` | 抽出 LLM factory、工具注册、任务执行服务 |
+| 第 3 周 | SSE 强类型协议 | 为前后端事件定义联合类型 / Pydantic 模型 |
+| 第 4 周 | 并发和 timeout | 增加最大并发、搜索超时、总结超时、报告超时 |
+| 第 5 周 | 可观测性 | 增加 run_id、duration_ms、trace 面板 |
+| 第 6 周 | Agent 评估 | 建立 `evals/cases.jsonl` 和基础评分脚本 |
+| 第 7 周 | Deep Research 质量优化 | Query Rewriting、Source Ranking、Critic 检查 |
+| 第 8 周 | 横向拓展 | 选择 Browser Agent 或 Coding Agent 做一个小 demo |
+
+### 如果只能先做三件事
+
+1. 从 `agent.py` 中继续拆出独立服务，但每一步都配测试。
+2. 把 SSE 事件协议改成强类型。
+3. 增加并发限制、timeout 和基础 trace。

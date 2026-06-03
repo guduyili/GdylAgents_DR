@@ -101,6 +101,64 @@ def _build_config(payload: ResearchRequest) -> Configuration:
     return Configuration.from_env(overrides=overrides)
 
 
+import re as _re
+
+
+def _strip_report_heading(body: str, title: str) -> str:
+    """Strip duplicate heading lines at the start of report content.
+
+    NoteTool automatically prepends ``# {title}`` when writing .md files.
+    If the LLM's report also starts with the same title, the rendered note
+    would show the title twice (or even three times). This iteratively
+    strips all leading heading lines that match *title*, plus any blank
+    lines between them, until the content starts with something different.
+    """
+    if not body or not title:
+        return body
+
+    max_strips = 5  # Safety limit to avoid infinite loops
+    for _ in range(max_strips):
+        lines = body.split("\n")
+        first_line = lines[0].strip() if lines else ""
+        if not first_line:
+            break
+
+        # Pattern 1: Markdown heading (# / ## / ### title)
+        heading_match = _re.match(r"^#{1,3}\s+", first_line)
+        heading_text = first_line[heading_match.end():].strip() if heading_match else ""
+
+        matched = False
+        if heading_match and _titles_match(heading_text, title):
+            matched = True
+        elif _titles_match(first_line, title):
+            # Pattern 2: Plain text title (no # prefix)
+            matched = True
+
+        if not matched:
+            break
+
+        # Strip the matched line + trailing blank lines
+        start = 1
+        while start < len(lines) and lines[start].strip() == "":
+            start += 1
+        if start >= len(lines):
+            break
+        body = "\n".join(lines[start:])
+
+    return body
+
+
+def _titles_match(heading: str, title: str) -> bool:
+    """Check whether a heading line matches or is closely related to a title."""
+    if not heading or not title:
+        return False
+    if heading == title:
+        return True
+    if heading in title or title in heading:
+        return True
+    return False
+
+
 def _normalize_todo_items(items: list[TodoItemRequest] | None, topic: str) -> list[TodoItem] | None:
     """将前端提交的任务清单转换为内部 TodoItem，并重新分配连续 ID。"""
     if items is None:
@@ -331,6 +389,9 @@ def create_app() -> FastAPI:
                 for line in frontmatter.splitlines():
                     if line.startswith("title:"):
                         title = line.split(":", 1)[1].strip().strip('"').strip("'")
+        # 去重复标题：NoteTool 写入 .md 时会自动在正文前添加 # {title}，
+        # 若 LLM 输出的报告也以相同标题开头，就会导致标题重复显示。
+        body = _strip_report_heading(body, title)
         return {"id": note_id, "title": title, "content": body}
 
     return app

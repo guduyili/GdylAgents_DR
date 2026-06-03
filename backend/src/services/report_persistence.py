@@ -35,6 +35,23 @@ def extract_note_id_from_text(response: str) -> str | None:
     return match.group(1).strip()
 
 
+def _titles_match(heading: str, title: str) -> bool:
+    """Check whether a heading line matches or is closely related to a title.
+
+    Handles cases where LLM output varies slightly from the system-generated title,
+    e.g. "研究报告：xxx" vs "# 研究报告：xxx" vs plain "研究报告：xxx".
+    """
+    if not heading or not title:
+        return False
+    # Exact match
+    if heading == title:
+        return True
+    # One contains the other (e.g. LLM shortens or elaborates)
+    if heading in title or title in heading:
+        return True
+    return False
+
+
 class ReportPersistence:
     """Write final reports to NoteTool-backed local notes."""
 
@@ -56,7 +73,7 @@ class ReportPersistence:
 
         note_title = f"研究报告：{state.research_topic}".strip() or "研究报告"
         tags = ["deep_research", "report"]
-        content = report.strip()
+        content = self._strip_duplicate_title(report.strip(), note_title)
 
         note_id = self.find_existing_note_id(state)
 
@@ -107,6 +124,52 @@ class ReportPersistence:
             payload["note_path"] = str(note_path)
 
         return payload
+
+    @staticmethod
+    def _strip_duplicate_title(content: str, title: str) -> str:
+        """Remove duplicate title lines from the start of report content.
+
+        NoteTool automatically prepends ``# {title}`` when writing .md files.
+        If the LLM's report content also starts with the same title, the
+        rendered note would show the title multiple times.  This method
+        iteratively strips all leading title headings (with or without
+        ``#`` prefix) until a non-matching line is reached.
+        """
+        if not content or not title:
+            return content
+
+        import re as _re
+
+        max_strips = 5
+        for _ in range(max_strips):
+            lines = content.split("\n")
+            first_line = lines[0].strip() if lines else ""
+            if not first_line:
+                break
+
+            # Pattern 1: Markdown heading (# / ## / ### title)
+            heading_match = _re.match(r"^#{1,3}\s+", first_line)
+            heading_text = first_line[heading_match.end():].strip() if heading_match else ""
+
+            matched = False
+            if heading_match and _titles_match(heading_text, title):
+                matched = True
+            elif _titles_match(first_line, title):
+                # Pattern 2: Plain text title (no # prefix)
+                matched = True
+
+            if not matched:
+                break
+
+            # Strip the matched line + trailing blank lines
+            start = 1
+            while start < len(lines) and lines[start].strip() == "":
+                start += 1
+            if start >= len(lines):
+                break
+            content = "\n".join(lines[start:])
+
+        return content
 
     def find_existing_note_id(self, state: SummaryState) -> str | None:
         """Find an existing report note id from state or tracked note tool calls."""

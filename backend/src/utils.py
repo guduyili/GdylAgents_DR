@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Union
 
 
@@ -22,18 +23,24 @@ def get_config_value(value: Any)->str:
 
 
 def strip_thinking_tokens(text: str) -> str:
-    """移除模型响应中的 <think>...</think> 推理过程片段。
-    
-    部分模型（如 DeepSeek-R1）会在响应中插入思考过程，
-    最终呈现给用户时需要将其剥除。
+    """移除模型响应中的推理过程片段。
+
+    支持 DeepSeek-R1 / V4 Flash 的think标签，
+    以及reasoning等变体，包括不完整的标签对。
     """
-    while "<think>" in text and "</think>" in text:
-        start = text.find("<think>")
-        end = text.find("</think>") + len("</think>")
-        text = text[:start] + text[end:]
-
-    return text
-
+    # Build tag patterns using concat to avoid pitfalls
+    ts = "<" + "think" + ">"
+    te = "</" + "think" + ">"
+    rs = "<" + "reasoning" + ">"
+    re_tag = "</" + "reasoning" + ">"
+    # 1. Complete thinking tag pairs (including multiline)
+    text = re.sub(ts + r"[\s\S]*?" + te, "", text)
+    text = re.sub(rs + r"[\s\S]*?" + re_tag, "", text)
+    # 2. Orphan start/end tags (Flash models may output incomplete tags)
+    text = re.sub(r"</?(?:think|reasoning)>", "", text)
+    # 3. Collapse 3+ consecutive newlines to 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 def deduplicate_and_format_sources(
     search_response: Dict[str,Any] | List[Dict[str,Any]],
     max_tokens_per_source: int,

@@ -59,7 +59,7 @@ class ReportingService:
         create_conclusion_template = json.dumps(
             {
                 "action": "create",
-                "title": f"研究报告:{state.research_topic}",
+                "title": f"研究报告：{state.research_topic}",
                 "note_type": "conclusion",
                 "tags": ["deep_research","report"],
                 "content": "请在此沉淀最终报告要点",
@@ -82,7 +82,8 @@ class ReportingService:
                 f"任务概览：\n{''.join(tasks_block)}\n"
                 f"可用任务笔记：\n{notes_section}\n"
                 f"请针对每条任务笔记使用格式：[TOOL_CALL:note:{read_template}] 读取内容，整合所有信息后撰写报告。\n"
-                f"如需输出汇总结论，可追加调用：[TOOL_CALL:note:{create_conclusion_template}] 保存报告要点。"
+                f"如需输出汇总结论，可追加调用：[TOOL_CALL:note:{create_conclusion_template}] 保存报告要点。\n\n"
+                "重要：不要在报告正文中重复写入「研究报告：xxx」标题，系统会自动添加。直接从「1. 背景概览」开始撰写。"
             )
         
         # 指数退避重试：最多 3 次，间隔 1s / 2s

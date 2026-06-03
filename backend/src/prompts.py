@@ -5,7 +5,7 @@ from datetime import datetime
 
 def get_current_date():
     """返回当前日期的中文友好格式，供 prompt 注入使用。"""
-    return datetime.now().strftime("%B %d, %Y")
+    return datetime.now().strftime("%Y年%m月%d日")
 
 
 # ────────────────────────────────────────────────────
@@ -46,14 +46,14 @@ todo_planner_system_prompt = """
 # 调用时需要填入 current_date 和 research_topic
 # ────────────────────────────────────────────────────
 todo_planner_instructions = """
-
 <CONTEXT>
 当前日期：{current_date}
 研究主题：{research_topic}
 </CONTEXT>
 
 <FORMAT>
-请严格以 JSON 格式回复：
+【必须严格遵守】只输出 JSON，不要输出表格、列表、解释或其他格式。
+你的完整回复必须是以下 JSON 格式，不要在 JSON 前后添加任何文字：
 {{
   "tasks": [
     {{
@@ -63,9 +63,9 @@ todo_planner_instructions = """
     }}
   ]
 }}
-</FORMAT>
 
-如果主题信息不足以规划任务，请输出空数组：{{"tasks": []}}。必要时使用笔记工具记录你的思考过程。
+如果主题信息不足以规划任务，请输出空数组：{{"tasks": []}}。
+</FORMAT>
 """
 
 

@@ -15,3 +15,4 @@ src/services/text_processing.py
 src/services/tool_events.py
 tests/test_config.py
 tests/test_main.py
+tests/test_report_persistence.py

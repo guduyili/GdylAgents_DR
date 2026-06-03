@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
-from pathlib import Path
 from queue import Empty, Queue
 from threading import Lock, Thread
 from typing import Any, Callable, Iterator
@@ -22,6 +20,7 @@ from prompts import (
 from models import SummaryState, SummaryStateOutput, TodoItem
 from services.llm_factory import create_llm
 from services.planner import PlanningService
+from services.report_persistence import ReportPersistence
 from services.reporter import ReportingService
 from services.search import dispatch_search, prepare_research_context
 from services.summarizer import SummarizationService
@@ -65,6 +64,11 @@ class DeepResearchAgent:
         # 工具调用事件追踪器：用于收集 Agent 的工具调用记录并推送给前端
         self._tool_tracker = ToolCallTracker(
             self.config.notes_workspace if self.config.enable_notes else None
+        )
+        self.report_persistence = ReportPersistence(
+            note_tool=self.note_tool,
+            notes_workspace=self.config.notes_workspace if self.config.enable_notes else None,
+            tool_tracker=self._tool_tracker,
         )
 
         self._tool_event_sink_enabled = False
@@ -525,109 +529,7 @@ class DeepResearchAgent:
 
     def _persist_final_report(self, state: SummaryState, report: str) -> dict[str, Any] | None:
         """将最终报告写入笔记并返回笔记事件（供前端展示）。"""
-        if not self.note_tool or not report or not report.strip():
-            return None
-
-        note_title = f"研究报告：{state.research_topic}".strip() or "研究报告"
-        tags = ["deep_research", "report"]
-        content = report.strip()
-
-        note_id = self._find_existing_note_id(state)
-        response=""
-
-        if note_id:
-            # 已有报告笔记，执行更新
-            response = self.note_tool.run(
-                {
-                    "action": "update",
-                    "note_id": note_id,
-                    "title": note_title,
-                    "note_type": "conclusion",
-                    "tags": tags,
-                    "content": content,
-                }
-            )
-            if response.startswith("❌"):
-                note_id = None  # 更新失败，降级为新建
-        if not note_id:
-            # 新建报告笔记
-            response = self.note_tool.run(
-                {
-                    "action": "create",
-                    "title": note_title,
-                    "note_type": "conclusion",
-                    "tags": tags,
-                    "content": content,
-                }
-            )
-            note_id = self._extract_note_id_from_text(response)
-
-        if not note_id:
-            return None
-
-        state.report_note_id = note_id
-        if self.config.notes_workspace:
-            note_path = Path(self.config.notes_workspace) / f"{note_id}.md"
-            state.report_note_path = str(note_path)
-        else:
-            note_path = None
-
-        payload = {
-            "type": "report_note",
-            "note_id": note_id,
-            "title": note_title,
-            "content": content,
-        }
-        if note_path:
-            payload["note_path"] = str(note_path)
-
-        return payload
-
-
-    def _find_existing_note_id(self,state: SummaryState)->str | None:
-        """
-        查找已存在的报告笔记 ID 避免重复创建
-        """
-        if state.report_note_id:
-            return state.report_note_id
-
-        # 从工具调用历史中反向查找最终报告类型的笔记
-        for event in reversed(self._tool_tracker.as_dicts()):
-            if event.get("tool") != "note":
-                continue
-            parameters = event.get("parsed_parameters") or {}
-            if not isinstance(parameters, dict):
-                continue
-
-            action = parameters.get("action")
-            if action != "create":
-                continue
-
-            note_type = parameters.get("note_type")
-            if note_type != "conclusion":
-                title = parameters.get("title")
-                if not (isinstance(title,str) and title.startswith("研究报告：")):
-                    continue
-
-            note_id = parameters.get("note_id")
-            if not note_id:
-                note_id = self._tool_tracker._extract_note_id(event.get("result", ""))
-            
-            if note_id:
-             return note_id
-        return None
-
-    @staticmethod
-    def _extract_note_id_from_text(response: str) -> str | None:
-        """从笔记工具的返回文本中提取 note_id。"""
-        if not response:
-            return None
-
-        match = re.search(r"ID:\s*([^\n]+)", response)
-        if not match:
-            return None
-
-        return match.group(1).strip()
+        return self.report_persistence.persist_final_report(state, report)
 
 
 

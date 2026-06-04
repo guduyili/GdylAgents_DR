@@ -35,6 +35,12 @@ GdylAgents_DR 是一个“深度研究助手”项目，核心能力包括：
 
 ## 2. 当前架构概览
 
+建议配合阅读：
+
+- `docs/project.md`：架构与前后端调用链概览
+- `docs/topic_call_chain.md`：用户输入 topic 后的完整 Agent 调用链
+- `docs/tool_call_event.md`：工具调用事件记录链路
+
 ### 后端主流程
 
 1. `main.py` 提供 HTTP 接口

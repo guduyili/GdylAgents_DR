@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import logging
-from queue import Empty, Queue
-from threading import Lock, Thread
+from threading import Lock
 from typing import Any, Callable, Iterator
 
 from hello_agents import ToolAwareSimpleAgent
-from hello_agents.tools import ToolRegistry
-from hello_agents.tools.builtin.note_tool import NoteTool
 
 from config import Configuration
 from prompts import (
@@ -22,9 +19,11 @@ from services.llm_factory import create_llm
 from services.planner import PlanningService
 from services.report_persistence import ReportPersistence
 from services.reporter import ReportingService
-from services.search import dispatch_search, prepare_research_context
 from services.summarizer import SummarizationService
+from services.task_executor import TaskExecutor
+from services.stream_runner import StreamRunner
 from services.tool_events import ToolCallTracker
+from services.tool_registry_factory import create_tooling
 
 
 
@@ -49,17 +48,9 @@ class DeepResearchAgent:
         self.llm = create_llm(self.config)              # 根据配置创建 HelloAgentsLLM 实例
         
         # 如果启用笔记功能，初始化 NoteTool 和工具注册表
-        self.note_tool = (
-            NoteTool(self.config.notes_workspace)
-            if self.config.enable_notes
-            else None
-        )
-
-        self.tools_registry: ToolRegistry | None = None
-        if self.note_tool:
-            registry = ToolRegistry()
-            registry.register_tool(self.note_tool)
-            self.tools_registry = registry
+        tooling = create_tooling(self.config)
+        self.note_tool = tooling.note_tool
+        self.tools_registry = tooling.tools_registry
 
         # 工具调用事件追踪器：用于收集 Agent 的工具调用记录并推送给前端
         self._tool_tracker = ToolCallTracker(
@@ -103,6 +94,21 @@ class DeepResearchAgent:
         self.reporting = ReportingService(
             self.report_agent,
             self.config,
+        )
+        self.task_executor = TaskExecutor(
+            config=self.config,
+            summarizer=self.summarizer,
+            state_lock=self._state_lock,
+            drain_tool_events=self._drain_tool_events,
+        )
+        self.stream_runner = StreamRunner(
+            planner=self.planner,
+            task_executor=self.task_executor,
+            reporting=self.reporting,
+            drain_tool_events=self._drain_tool_events,
+            set_tool_event_sink=self._set_tool_event_sink,
+            persist_final_report=self._persist_final_report,
+            serialize_task=self._serialize_task,
         )
         self._last_search_notices: list[str] = []
 
@@ -161,7 +167,9 @@ class DeepResearchAgent:
         
         # 第二步： 逐个执行任务（搜索 + 总结）
         for task in state.todo_items:
-            self._execute_task(state,task,emit_stream=False)
+            for _event in self._execute_task(state, task, emit_stream=False):
+                # 同步模式不向调用方返回中间事件，但必须消耗生成器以真正执行任务。
+                pass
 
         # 第三步： 生成最终报告
         try:
@@ -185,170 +193,8 @@ class DeepResearchAgent:
         )
 
     def run_stream(self, topic: str, todo_items: list[TodoItem] | None = None)-> Iterator[dict[str,Any]]:
-        """流式执行研究流程，通过 SSE 逐步推送进度事件。
-        
-        事件类型（type 字段）：
-        - status：流程状态提示
-        - todo_list：规划完成，返回任务列表
-        - task_status：单个任务状态变更
-        - sources：任务搜索到的来源
-        - task_summary_chunk：任务总结的流式文本块
-        - final_report：最终报告
-        - done：流程结束
-        """
-        state = SummaryState(research_topic=topic)
-        logger.debug("开始流式研究： topic=%s",topic)
-        yield {"type": "status", "message": "初始化研究流程"}
-        
-        # 规划任务；如果调用方已传入任务清单，则直接执行确认后的规划。
-        if todo_items is not None:
-            state.todo_items = todo_items
-        else:
-            state.todo_items = self.planner.plan_todo_list(state)
-            for event in self._drain_tool_events(state, step=0):
-                yield event
-        if not state.todo_items:
-            state.todo_items = [self.planner.create_fallback_task(state=state)]
-        
-        # 为每个任务分配步骤编号和流标识（前端用于区分不同任务的输出流）
-        channel_map: dict[int,dict[str, Any]] = {}
-        for index,task in enumerate(state.todo_items, start=1):
-            token = f"task_{task.id}"
-            task.stream_token = token
-            channel_map[task.id] = {"step":index, "token":token}
-        
-        yield {
-            "type":"todo_list",
-            "tasks":[self._serialize_task(t) for t in state.todo_items],
-            "step":0,
-        }
-        
-        # 使用队列在多线程任务和主线程推送之间传递事件
-        event_queue: Queue[dict[str, Any]] = Queue()
-
-        def enqueue(
-            event: dict[str, Any],
-            *,
-            task: TodoItem | None = None,
-            step_override: int | None = None,
-        ) -> None:
-            """将事件加入队列，自动附加任务 ID 和流标识。"""
-            payload = dict(event)
-            target_task_id = payload.get("task_id")
-            if task is not None:
-                target_task_id = task.id
-                payload["task_id"] = task.id    
-            
-            channel = channel_map.get(target_task_id) if target_task_id is not None else None
-            if channel:
-                payload.setdefault("step", channel["step"])
-                payload["stream_token"] = channel["token"]
-            if step_override is not None:
-                payload["step"] = step_override
-            
-            event_queue.put(payload)
-
-        def tool_event_sink(event:  dict[str,Any]) -> None:
-            """工具调用事件实时回调：直接入队推送给前端。"""
-            enqueue(event)
-
-
-        self._set_tool_event_sink(tool_event_sink)
-
-        threads: list[Thread] = []
-
-        def worker(task: TodoItem, step: int)->None:
-            """
-            每个任务在独立线程中执行，完成后发送内部任务完成信号。
-            """
-            try:
-                enqueue(
-                    {
-                        "type": "task_status",
-                        "task_id": task.id,
-                        "status": "in_progress",
-                        "title": task.title,
-                        "intent": task.intent,
-                        "note_id": task.note_id,
-                        "note_path": task.note_path,
-                    },
-                    task=task,
-                )
-                for event in self._execute_task(state,task,emit_stream=True,step=step):
-                    enqueue(event, task=task)
-
-
-            except Exception as exc:
-                logger.exception("任务执行失败",exc_info=exc)
-                enqueue(
-                    {
-                        "type":"task_status",
-                        "task_id": task.id,
-                        "status": "failed",
-                        "error": str(exc),
-                        "title":task.title,
-                        "intent": task.intent,
-                        "note_id": task.note_id,
-                        "note_path": task.note_path,
-                    },
-                    task=task,
-                )
-            finally:
-                enqueue({"type":"__task_done__","task_id":task.id})
-
-        # 启动所有任务线程（并发执行）
-        for task in state.todo_items:
-            step = channel_map.get(task.id,{}).get("step",0)
-            thread = Thread(target=worker, args=(task, step), daemon=True)
-            threads.append(thread)
-            thread.start()
-        active_workers = len(state.todo_items)
-        finished_workers = 0
-
-        # 主线程从队列消费事件，推送给前端，直到所有任务完成
-        try:
-            while finished_workers < active_workers:
-                event = event_queue.get()
-                if event.get("type") == "__task_done__":
-                    finished_workers += 1
-                    continue
-                yield event
-
-        # 消费队列中剩余的非终止事件
-        finally:
-            self._set_tool_event_sink(None)
-            for thread in threads:
-                thread.join()
-
-        # 所有任务完成后生成最终报告
-        final_step = len(state.todo_items) + 1
-        try:
-            report = self.reporting.generate_report(state)
-        except Exception as exc:
-            logger.exception("报告生成失败，将使用任务摘要兜底: %s", exc)
-            summaries = "\n\n".join(
-                f"### {t.title}\n{t.summary or '暂无摘要'}"
-                for t in state.todo_items
-            )
-            report = f"## 研究摘要（报告生成失败，使用任务摘要兜底）\n\n{summaries}"
-
-        for event in self._drain_tool_events(state, step=final_step):
-            yield event
-        state.structured_report = report
-        state.running_summary = report
-
-        note_event = self._persist_final_report(state, report)
-        if note_event:
-            yield note_event
-
-        yield {
-            "type": "final_report",
-            "report": report,
-            "note_id": state.report_note_id,
-            "note_path": state.report_note_path,
-        }
-
-        yield {"type": "done"}
+        """流式执行研究流程，通过 SSE 逐步推送进度事件。"""
+        yield from self.stream_runner.run(topic, todo_items=todo_items)
 
 
     # ------------------------------------------------------------------
@@ -364,128 +210,14 @@ class DeepResearchAgent:
     
     )-> Iterator[dict[str,Any]]:
         """执行单个任务：搜索 → 准备上下文 → 总结。"""
-        task.status = "in_progress"
-
-        # 搜索阶段
-        search_result,notices,answer_text,backend = dispatch_search(
-            task.query,
-            self.config,
-            state.research_loop_count
+        events = self.task_executor.execute(
+            state,
+            task,
+            emit_stream=emit_stream,
+            step=step,
         )
-        self._last_search_notices = notices
-        task.notices = notices
-
-        if emit_stream:
-            for event in self._drain_tool_events(state, step=step):
-                yield event
-        else:
-            self._drain_tool_events(state)
-
-
-        # 推送搜索提示（如有）
-        if notices and emit_stream:
-            for notice in notices:
-                if notice:
-                    yield{
-                        "type":"status",
-                        "message": notice,
-                        "task_id": task.id,
-                        "step": step,
-                    }
-
-        # 如果搜索无结果，跳过该任务
-        if not search_result or not search_result.get("results"):
-            task.status = "skipped"
-            if emit_stream:
-                for event in self._drain_tool_events(state, step=step):
-                    yield event
-                yield {
-                    "type": "task_status",
-                    "task_id": task.id,
-                    "status": "skipped",
-                    "title": task.title,
-                    "intent": task.intent,
-                    "note_id": task.note_id,
-                    "note_path": task.note_path,
-                    "step": step,
-                }
-            else:
-                self._drain_tool_events(state)
-            return
-        else:
-            if not emit_stream:
-                self._drain_tool_events(state)
-        
-        # 准备供LLM使用的研究上下文
-        sources_summary, context = prepare_research_context(
-            search_result,
-            answer_text,
-            self.config,
-        )
-        task.sources_summary = sources_summary
-
-        # 加锁更新共享状态（多线程安全）
-        with self._state_lock:
-            state.web_research_results.append(context),
-            state.sources_gathered.append(sources_summary)
-            state.research_loop_count += 1
-        summary_text: str| None = None
-
-        if emit_stream:
-            for event in self._drain_tool_events(state, step=step):
-                yield event
-            yield{
-                "type":"sources",
-                "task_id": task.id,
-                "latest_sources": sources_summary,
-                "raw_context": context,
-                "step": step,
-                "backend": backend,
-                "note_id": task.note_id,
-                "note_path": task.note_path,
-            }
-
-            # 流式总结： 逐 chunk 推送给前端
-            summary_steam, summary_getter = self.summarizer.stream_task_summary(state,task,context)
-            try:
-                for event in self._drain_tool_events(state, step=step):
-                    yield event
-                for chunk in summary_steam:
-                    if chunk:
-                        yield{
-                            "type":"task_summary_chunk",
-                            "task_id": task.id,
-                            "content": chunk,
-                            "note_id": task.note_id,
-                            "step": step,
-                        }
-                    for event in self._drain_tool_events(state,step = step):
-                        yield event
-            finally:
-                summary_text = summary_getter()
-        else:
-            # 同步总结
-            summary_text = self.summarizer.summarize_task(state, task, context)
-            self._drain_tool_events(state)
-        
-        task.summary = summary_text.strip() if summary_text else "暂无可用信息"
-        task.status = "completed"
-
-        if emit_stream:
-            for event in self._drain_tool_events(state, step=step):
-                yield event
-            yield{
-                "type":"task_status",
-                "task_id": task.id,
-                "status": "completed",
-                "summary": task.summary,
-                "sources_summary": task.sources_summary,
-                "note_id": task.note_id,
-                "note_path": task.note_path,
-                "step": step,
-            }
-        else:
-            self._drain_tool_events(state)
+        yield from events
+        self._last_search_notices = self.task_executor.last_search_notices
 
 
     def _drain_tool_events(

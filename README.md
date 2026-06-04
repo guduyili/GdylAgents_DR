@@ -42,9 +42,10 @@ GdylAgents_DR 是一个基于 FastAPI、Vue 3 和 HelloAgents 的深度研究助
 │       ├── services/api.ts
 │       └── types/research.ts
 └── docs/
-    ├── architecture.md
-    ├── learning-and-optimization-guide.md
-    └── tool_call_event_chain.md
+    ├── project.md                 # 架构与前后端调用链概览
+    ├── learning.md                # 初学者优化与学习建议
+    ├── topic_call_chain.md        # 用户输入 topic 后的完整 Agent 调用链
+    └── tool_call_event.md         # 工具调用事件记录链路
 ```
 
 ## 环境变量配置

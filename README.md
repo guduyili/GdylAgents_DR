@@ -67,6 +67,8 @@ LLM_MODEL_ID=your-model-id
 REPORT_MODEL_ID=your-report-model-id
 SEARCH_API=duckduckgo
 NOTES_WORKSPACE=./data/notes
+RUN_STORE_BACKEND=sqlite
+RUN_STORE_DB_PATH=./data/research_runs.sqlite3
 ```
 
 前端：

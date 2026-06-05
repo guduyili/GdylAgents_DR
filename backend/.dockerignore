@@ -1,0 +1,25 @@
+# Python/cache artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local env/secrets
+.env
+src/.env
+*.env
+
+# Runtime data
+src/note/
+data/
+src/data/
+
+# Local/editor files
+.git/
+.gitignore
+Dockerfile*

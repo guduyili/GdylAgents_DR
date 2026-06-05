@@ -17,7 +17,7 @@ from services.plan_runner import PlanRunner
 from services.planner import PlanningService
 from services.report_persistence import ReportPersistence
 from services.reporter import ReportingService
-from services.research_run_store import InMemoryResearchRunStore
+from services.research_run_store import InMemoryResearchRunStore, ResearchRunStore, SQLiteResearchRunStore
 from services.stream_runner import StreamRunner
 from services.summarizer import SummarizationService
 from services.sync_runner import SyncRunner
@@ -51,17 +51,21 @@ class ResearchServices:
     task_executor: TaskExecutor
     sync_runner: SyncRunner
     stream_runner: StreamRunner
-    run_store: InMemoryResearchRunStore
+    run_store: ResearchRunStore
 
 
 def create_research_services(
     config: Configuration,
     *,
-    run_store: InMemoryResearchRunStore | None = None,
+    run_store: ResearchRunStore | None = None,
 ) -> ResearchServices:
     """按固定依赖顺序装配完整研究服务。"""
     llm = create_llm(config)
-    run_store = run_store or InMemoryResearchRunStore()
+    if run_store is None:
+        if config.run_store_backend == "sqlite":
+            run_store = SQLiteResearchRunStore(config.run_store_db_path)
+        else:
+            run_store = InMemoryResearchRunStore()
     tooling = create_tooling(config)
     tool_tracker = ToolCallTracker(config.notes_workspace if config.enable_notes else None)
     tool_event_bridge = ToolEventBridge(tracker=tool_tracker)

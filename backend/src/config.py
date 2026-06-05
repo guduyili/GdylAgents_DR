@@ -98,6 +98,16 @@ class Configuration(BaseModel):
         title="报告模型 ID",
         description="专用于最终报告生成的模型（不填则与 llm_model_id 一致）",
     )
+    run_store_backend: str = Field(
+        default="memory",
+        title="研究运行存储后端",
+        description="研究运行时间线存储后端：memory / sqlite",
+    )
+    run_store_db_path: str = Field(
+        default="./data/research_runs.sqlite3",
+        title="研究运行 SQLite 数据库路径",
+        description="run_store_backend=sqlite 时使用的 SQLite 数据库路径",
+    )
 
 
     @classmethod
@@ -131,6 +141,8 @@ class Configuration(BaseModel):
             "search_api": os.getenv("SEARCH_API"),
             "enable_notes": os.getenv("ENABLE_NOTES"),
             "notes_workspace": os.getenv("NOTES_WORKSPACE"),
+            "run_store_backend": os.getenv("RUN_STORE_BACKEND"),
+            "run_store_db_path": os.getenv("RUN_STORE_DB_PATH"),
         }
 
         # setdefault：别名不覆盖第一步已读取的值

@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from config import Configuration, SearchAPI
 from agent import DeepResearchAgent
 from models import TodoItem
-from services.research_run_store import InMemoryResearchRunStore
+from services.research_run_store import InMemoryResearchRunStore, ResearchRunStore, SQLiteResearchRunStore
 from services.research_services_factory import create_research_services
 
 
@@ -201,11 +201,18 @@ def _serialize_todo_item(item: TodoItem) -> dict[str, Any]:
     }
 
 
-def _build_stream_agent(payload: ResearchRequest, run_store: InMemoryResearchRunStore) -> DeepResearchAgent:
+def _build_stream_agent(payload: ResearchRequest, run_store: ResearchRunStore) -> DeepResearchAgent:
     """创建流式研究 agent，并注入应用级 run_store 以支持后续按 run_id 查询。"""
     config = _build_config(payload)
     services = create_research_services(config, run_store=run_store)
     return DeepResearchAgent(services=services)
+
+
+def _create_run_store_from_config(config: Configuration) -> ResearchRunStore:
+    """根据配置创建应用级 run_store。"""
+    if config.run_store_backend == "sqlite":
+        return SQLiteResearchRunStore(config.run_store_db_path)
+    return InMemoryResearchRunStore()
 
 
 # ────────────────────────────────────────────────────
@@ -214,7 +221,7 @@ def _build_stream_agent(payload: ResearchRequest, run_store: InMemoryResearchRun
 def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用实例。"""
     app = FastAPI(title="HelloAgents Deep Researcher")
-    app.state.run_store = InMemoryResearchRunStore()
+    app.state.run_store = _create_run_store_from_config(Configuration.from_env())
 
     # 允许前端跨域访问（开发环境使用 *，生产环境应收紧 origins）
     app.add_middleware(

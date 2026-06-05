@@ -18,6 +18,9 @@ COPY pyproject.toml uv.lock ./
 ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 # 指定 note 存储绝对路径，避免相对路径因 cwd 不同写到错误位置
 ENV NOTES_WORKSPACE=/app/src/note
+# Docker 默认启用 SQLite run store，并写入挂载的数据目录
+ENV RUN_STORE_BACKEND=sqlite
+ENV RUN_STORE_DB_PATH=/app/src/data/research_runs.sqlite3
 RUN uv sync --frozen --no-dev --no-install-project
 
 # 复制源码
@@ -25,8 +28,8 @@ COPY src/ ./src/
 
 WORKDIR /app/src
 
-# 创建笔记目录（对应代码实际使用路径）
-RUN mkdir -p /app/src/note
+# 创建笔记目录和 SQLite run_store 数据目录（对应 compose 挂载路径）
+RUN mkdir -p /app/src/note /app/src/data
 
 EXPOSE 8000
 

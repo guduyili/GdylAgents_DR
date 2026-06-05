@@ -8,8 +8,13 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/src/.env
+    environment:
+      NOTES_WORKSPACE: /app/src/note
+      RUN_STORE_BACKEND: sqlite
+      RUN_STORE_DB_PATH: /app/src/data/research_runs.sqlite3
     volumes:
       - notes_data:/app/src/note
+      - run_store_data:/app/src/data
     networks:
       - internal
     # 不对外暴露端口，仅通过 nginx 反代访问
@@ -40,6 +45,8 @@ services:
 
 volumes:
   notes_data:
+    driver: local
+  run_store_data:
     driver: local
 
 networks:

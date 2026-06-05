@@ -1,54 +1,41 @@
 from __future__ import annotations
 
-from models import SummaryState, TodoItem
+from models import SummaryStateOutput, TodoItem
 from agent import DeepResearchAgent
 
 
-class FakeTaskExecutor:
-    def __init__(self) -> None:
-        self.calls: list[tuple[SummaryState, TodoItem, bool, int | None]] = []
-        self.last_search_notices: list[str] = []
+class FakeSyncRunner:
+    def __init__(self, output: SummaryStateOutput) -> None:
+        self.output = output
+        self.calls: list[tuple[str, list[TodoItem] | None]] = []
 
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None):
-        self.calls.append((state, task, emit_stream, step))
-        task.status = "completed"
-        task.summary = "同步任务摘要"
-        state.web_research_results.append("同步上下文")
-        state.sources_gathered.append("同步来源")
-        yield from ()
-
-
-class FakeReporting:
-    def __init__(self) -> None:
-        self.calls: list[SummaryState] = []
-
-    def generate_report(self, state: SummaryState) -> str:
-        self.calls.append(state)
-        summaries = [task.summary for task in state.todo_items]
-        return "最终报告: " + ", ".join(summary or "空摘要" for summary in summaries)
+    def run(self, topic: str, todo_items: list[TodoItem] | None = None) -> SummaryStateOutput:
+        self.calls.append((topic, todo_items))
+        if todo_items:
+            todo_items[0].status = "completed"
+            todo_items[0].summary = "同步任务摘要"
+        return self.output
 
 
-def test_sync_run_iterates_task_execution_generator_for_provided_tasks() -> None:
-    agent = object.__new__(DeepResearchAgent)
-    task_executor = FakeTaskExecutor()
-    reporting = FakeReporting()
-    persisted: list[tuple[SummaryState, str]] = []
+class FakeServices:
+    def __init__(self, sync_runner: FakeSyncRunner) -> None:
+        self.sync_runner = sync_runner
 
-    agent.task_executor = task_executor
-    agent.reporting = reporting
-    agent._drain_tool_events = lambda state, step=None: []
-    agent._persist_final_report = lambda state, report: persisted.append((state, report))
 
+def test_sync_run_delegates_to_sync_runner_for_provided_tasks() -> None:
     task = TodoItem(id=1, title="任务一", intent="验证同步执行", query="agent sync run")
+    output = SummaryStateOutput(
+        running_summary="最终报告: 同步任务摘要",
+        report_markdown="最终报告: 同步任务摘要",
+        todo_items=[task],
+    )
+    sync_runner = FakeSyncRunner(output)
+    agent = DeepResearchAgent(services=FakeServices(sync_runner))
 
     result = agent.run("AI Agent", todo_items=[task])
 
-    assert len(task_executor.calls) == 1
-    assert task_executor.calls[0][1] is task
-    assert task_executor.calls[0][2] is False
+    assert sync_runner.calls == [("AI Agent", [task])]
     assert task.status == "completed"
     assert task.summary == "同步任务摘要"
     assert result.report_markdown == "最终报告: 同步任务摘要"
     assert result.todo_items == [task]
-    assert reporting.calls
-    assert persisted[0][1] == "最终报告: 同步任务摘要"

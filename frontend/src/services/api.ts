@@ -22,6 +22,8 @@ export interface ResearchPlanResponse {
 
 export interface ResearchStreamEvent {
   type: string;
+  run_id?: string;
+  timestamp?: string;
   [key: string]: unknown;
 }
 
@@ -155,5 +157,20 @@ export async function listReports(): Promise<ReportItem[]> {
 export async function getReport(noteId: string): Promise<ReportDetail> {
   const res = await fetch(`${baseURL}/notes/reports/${encodeURIComponent(noteId)}`);
   if (!res.ok) throw new Error("报告不存在");
+  return res.json();
+}
+
+/** 查询某次研究运行的时间线事件 */
+export interface ResearchRunSnapshot {
+  run_id: string;
+  topic: string;
+  status: string;
+  events: ResearchStreamEvent[];
+}
+
+export async function getResearchRun(runId: string): Promise<ResearchRunSnapshot | null> {
+  const res = await fetch(`${baseURL}/research/runs/${encodeURIComponent(runId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`查询研究运行失败，状态码：${res.status}`);
   return res.json();
 }

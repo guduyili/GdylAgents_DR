@@ -5,6 +5,7 @@
         <p class="card-kicker">Research Workspace</p>
         <h2>卡片化研究工作台</h2>
         <p class="board-subtitle">任务、来源、笔记、工具调用与报告按研究阶段拆分展示。</p>
+        <p v-if="currentRunId" class="run-id-chip">Run ID：{{ currentRunId }}</p>
       </div>
       <div class="status-controls">
         <div class="status-chip" :class="{ active: loading }">
@@ -51,9 +52,17 @@
         </div>
         <span class="status-meta">{{ progressLogs.length }} 条记录</span>
       </div>
+      <div class="timeline-filters">
+        <button
+          v-for="opt in TIMELINE_FILTER_OPTIONS"
+          :key="opt.value"
+          :class="['filter-chip', { active: timelineFilter === opt.value }]"
+          @click="$emit('update:timeline-filter', opt.value)"
+        >{{ opt.label }}</button>
+      </div>
       <div class="timeline-wrapper">
         <transition-group name="timeline" tag="ul" class="timeline">
-          <li v-for="(log, index) in progressLogs" :key="`${log}-${index}`">
+          <li v-for="(log, index) in progressLogs" :key="`${log}-${index}`" v-show="timelineEvents[index] && timelineEventTypeMatches(timelineEvents[index].type, timelineFilter)">
             <span class="timeline-node"></span>
             <p>{{ log }}</p>
           </li>
@@ -214,6 +223,9 @@ defineProps<{
   todoTasks: TodoTaskView[];
   reportMarkdown: string;
   progressLogs: string[];
+  currentRunId: string | null;
+  timelineEvents: { type: string; message: string }[];
+  timelineFilter: string;
   loading: boolean;
   logsCollapsed: boolean;
   completedTasks: number;
@@ -246,5 +258,25 @@ defineEmits<{
   'download-report': [];
   'select-task': [taskId: number];
   'toggle-sources-summary': [];
+  'update:timeline-filter': [filter: string];
 }>();
+
+const TIMELINE_FILTER_OPTIONS = [
+  { value: "all", label: "全部" },
+  { value: "task_status", label: "任务" },
+  { value: "tool_call", label: "工具" },
+  { value: "sources", label: "来源" },
+  { value: "final_report", label: "报告" },
+] as const;
+
+function timelineEventTypeMatches(eventType: string, filter: string): boolean {
+  if (filter === "all") return true;
+  if (filter === "task_status") {
+    return ["task_status", "status", "todo_list"].includes(eventType);
+  }
+  if (filter === "tool_call") return eventType === "tool_call";
+  if (filter === "sources") return eventType === "sources";
+  if (filter === "final_report") return ["final_report", "report_note"].includes(eventType);
+  return true;
+}
 </script>

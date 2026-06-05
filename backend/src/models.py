@@ -1,7 +1,6 @@
-
 import operator
-from dataclasses import dataclass,field
-from typing import List,Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from typing_extensions import Annotated
 
@@ -19,6 +18,7 @@ class TodoItem:
     note_id: Optional[str] = field(default=None)         # 关联的笔记 ID
     note_path: Optional[str] = field(default=None)       # 笔记文件的本地路径
     stream_token: Optional[str] = field(default=None)    # 流式推送时用于标识该任务的 token
+    task_run_id: Optional[str] = field(default=None)     # 稳定链路 ID：{run_id}:task:{id}
 
 
 @dataclass(kw_only=True)
@@ -35,7 +35,7 @@ class SummaryState:
     structured_report: Optional[str] = field(default=None)      # 最终生成的结构化报告
     report_note_id: Optional[str] = field(default=None)         # 报告笔记的 ID
     report_note_path: Optional[str] = field(default=None)       # 报告笔记的本地路径
-
+    run_id: Optional[str] = field(default=None)                 # 本次研究流程的唯一标识
 
 @dataclass(kw_only=True)
 class SummaryStateInput:

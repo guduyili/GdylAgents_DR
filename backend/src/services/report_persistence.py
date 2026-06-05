@@ -75,6 +75,11 @@ class ReportPersistence:
         tags = ["deep_research", "report"]
         content = self._strip_duplicate_title(report.strip(), note_title)
 
+        metadata: dict[str, Any] = {}
+        if state.run_id:
+            metadata["run_id"] = state.run_id
+            tags = tags + [f"run:{state.run_id}"]
+
         note_id = self.find_existing_note_id(state)
 
         if note_id:
@@ -86,6 +91,7 @@ class ReportPersistence:
                     "note_type": "conclusion",
                     "tags": tags,
                     "content": content,
+                    "metadata": metadata,
                 }
             )
             if response.startswith("❌"):
@@ -99,6 +105,7 @@ class ReportPersistence:
                     "note_type": "conclusion",
                     "tags": tags,
                     "content": content,
+                    "metadata": metadata,
                 }
             )
             note_id = extract_note_id_from_text(response)
@@ -122,6 +129,8 @@ class ReportPersistence:
         }
         if note_path:
             payload["note_path"] = str(note_path)
+        if state.run_id:
+            payload["run_id"] = state.run_id
 
         return payload
 

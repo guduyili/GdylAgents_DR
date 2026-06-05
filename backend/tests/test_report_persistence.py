@@ -54,8 +54,8 @@ def test_persist_final_report_creates_report_note_and_updates_state(tmp_path: Pa
             "note_type": "conclusion",
             "tags": ["deep_research", "report"],
             "content": "# 最终报告",
-        }
-    ]
+            "metadata": {},
+    }]
     assert state.report_note_id == "report_001"
     assert state.report_note_path == str(tmp_path / "report_001.md")
     assert event == {

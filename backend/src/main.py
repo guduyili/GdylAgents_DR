@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field
 from config import Configuration, SearchAPI
 from agent import DeepResearchAgent
 from models import TodoItem
+from services.research_run_store import InMemoryResearchRunStore
+from services.research_services_factory import create_research_services
 
 
 # ────────────────────────────────────────────────────
@@ -31,8 +33,7 @@ from models import TodoItem
 logger.add(
     sys.stderr,
     level="INFO",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <4}</level> | <cyan>{function}</cyan> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",
-    colorize=True,
+    serialize=True,
 )
 
 
@@ -200,12 +201,20 @@ def _serialize_todo_item(item: TodoItem) -> dict[str, Any]:
     }
 
 
+def _build_stream_agent(payload: ResearchRequest, run_store: InMemoryResearchRunStore) -> DeepResearchAgent:
+    """创建流式研究 agent，并注入应用级 run_store 以支持后续按 run_id 查询。"""
+    config = _build_config(payload)
+    services = create_research_services(config, run_store=run_store)
+    return DeepResearchAgent(services=services)
+
+
 # ────────────────────────────────────────────────────
 # FastAPI 应用工厂
 # ────────────────────────────────────────────────────
 def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用实例。"""
     app = FastAPI(title="HelloAgents Deep Researcher")
+    app.state.run_store = InMemoryResearchRunStore()
 
     # 允许前端跨域访问（开发环境使用 *，生产环境应收紧 origins）
     app.add_middleware(
@@ -310,9 +319,8 @@ def create_app() -> FastAPI:
                            task_summary_chunk / final_report / done / error
         """
         try:
-            config = _build_config(payload)
             todo_items = _normalize_todo_items(payload.todo_items, payload.topic)
-            agent = DeepResearchAgent(config=config)
+            agent = _build_stream_agent(payload, app.state.run_store)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -339,6 +347,14 @@ def create_app() -> FastAPI:
 
 
 
+
+    @app.get("/research/runs/{run_id}")
+    def get_research_run(run_id: str) -> dict:
+        """查询某次研究运行的完整时间线事件。"""
+        snapshot = app.state.run_store.get_run(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail=f"研究运行 {run_id} 不存在")
+        return snapshot
 
     @app.get("/notes/reports")
     def list_reports() -> list[dict]:

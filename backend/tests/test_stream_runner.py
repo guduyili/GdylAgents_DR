@@ -81,7 +81,10 @@ def test_stream_runner_runs_provided_tasks_and_emits_final_report() -> None:
 
     events = list(runner.run("AI Agent", todo_items=[task]))
 
-    assert events[0] == {"type": "status", "message": "初始化研究流程"}
+    assert events[0]["type"] == "status"
+    assert events[0]["message"] == "初始化研究流程"
+    assert "run_id" in events[0]
+    assert "timestamp" in events[0]
     assert events[1]["type"] == "todo_list"
     assert events[1]["tasks"][0]["stream_token"] == "task_1"
     assert {event["type"] for event in events} == {
@@ -93,8 +96,16 @@ def test_stream_runner_runs_provided_tasks_and_emits_final_report() -> None:
         "final_report",
         "done",
     }
-    assert any(event == {"type": "final_report", "report": "# 报告", "note_id": None, "note_path": None} for event in events)
-    assert events[-1] == {"type": "done"}
+    final_reports = [event for event in events if event.get("type") == "final_report"]
+    assert final_reports
+    assert final_reports[0]["report"] == "# 报告"
+    assert final_reports[0]["note_id"] is None
+    assert final_reports[0]["note_path"] is None
+    assert "run_id" in final_reports[0]
+    assert "timestamp" in final_reports[0]
+    assert events[-1]["type"] == "done"
+    assert "run_id" in events[-1]
+    assert "timestamp" in events[-1]
     assert task_executor.calls[0][1] is task
     assert task_executor.calls[0][2] is True
     assert task_executor.calls[0][3] == 1
@@ -119,18 +130,20 @@ def test_stream_runner_marks_task_failed_when_executor_raises() -> None:
     events = list(runner.run("AI Agent", todo_items=[task]))
 
     failed_events = [event for event in events if event.get("type") == "task_status" and event.get("status") == "failed"]
-    assert failed_events == [
-        {
-            "type": "task_status",
-            "task_id": 1,
-            "status": "failed",
-            "error": "boom",
-            "title": "任务一",
-            "intent": "研究",
-            "note_id": None,
-            "note_path": None,
-            "step": 1,
-            "stream_token": "task_1",
-        }
-    ]
-    assert events[-1] == {"type": "done"}
+    assert len(failed_events) == 1
+    failed_event = failed_events[0]
+    assert failed_event["type"] == "task_status"
+    assert failed_event["task_id"] == 1
+    assert failed_event["status"] == "failed"
+    assert failed_event["error"] == "boom"
+    assert failed_event["title"] == "任务一"
+    assert failed_event["intent"] == "研究"
+    assert failed_event["note_id"] is None
+    assert failed_event["note_path"] is None
+    assert failed_event["step"] == 1
+    assert failed_event["stream_token"] == "task_1"
+    assert "run_id" in failed_event
+    assert "timestamp" in failed_event
+    assert events[-1]["type"] == "done"
+    assert "run_id" in events[-1]
+    assert "timestamp" in events[-1]

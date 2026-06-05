@@ -67,6 +67,9 @@
         :todo-tasks="todoTasks"
         :report-markdown="reportMarkdown"
         :progress-logs="progressLogs"
+        :current-run-id="currentRunId"
+        :timeline-events="timelineEvents"
+        :timeline-filter="timelineFilter"
         :loading="loading"
         :logs-collapsed="logsCollapsed"
         :completed-tasks="completedTasks"
@@ -93,6 +96,7 @@
         :format-tool-result="formatToolResult"
         :copy-note-path="copyNotePath"
         @toggle-logs="logsCollapsed = !logsCollapsed"
+        @update:timeline-filter="timelineFilter = $event"
         @download-report="downloadReport"
         @select-task="activeTaskId = $event"
         @toggle-sources-summary="sourcesSummaryOpen = !sourcesSummaryOpen"
@@ -141,6 +145,9 @@ const loading = ref(false);
 const planning = ref(false);
 const error = ref("");
 const progressLogs = ref<string[]>([]);
+const currentRunId = ref<string | null>(null);
+const timelineEvents = ref<{ type: string; message: string }[]>([]);
+const timelineFilter = ref<string>("all");
 const logsCollapsed = ref(false);
 const isExpanded = ref(false);
 
@@ -401,6 +408,34 @@ function ensureRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
+function formatEventTime(timestamp: unknown): string {
+  if (typeof timestamp !== "string" || !timestamp.trim()) {
+    return new Date().toLocaleTimeString();
+  }
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp.trim();
+  }
+  return parsed.toLocaleTimeString();
+}
+
+function trackStreamEvent(event: ResearchStreamEvent, message: string): void {
+  if (typeof event.run_id === "string" && event.run_id.trim()) {
+    currentRunId.value = event.run_id.trim();
+  }
+  const evtType = typeof event.type === "string" ? event.type : "status";
+  progressLogs.value.push(`[${formatEventTime(event.timestamp)}] ${message}`);
+  timelineEvents.value.push({ type: evtType, message });
+}
+
+function eventTimestampMs(event: ResearchStreamEvent): number {
+  if (typeof event.timestamp !== "string") {
+    return Date.now();
+  }
+  const parsed = new Date(event.timestamp).getTime();
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+}
+
 function applyNoteMetadata(
   task: TodoTaskView,
   payload: Record<string, unknown>
@@ -455,6 +490,9 @@ function resetWorkflowState() {
   activeTaskId.value = null;
   reportMarkdown.value = "";
   progressLogs.value = [];
+  currentRunId.value = null;
+  timelineEvents.value = [];
+  timelineFilter.value = "all";
   summaryHighlight.value = false;
   sourcesHighlight.value = false;
   reportHighlight.value = false;
@@ -675,7 +713,7 @@ const startResearchFromPlan = async () => {
             typeof event.message === "string" && event.message.trim()
               ? event.message
               : "流程状态更新";
-          progressLogs.value.push(message);
+          trackStreamEvent(event, message);
 
           const payload = event as Record<string, unknown>;
           const task = findTask(payload.task_id);
@@ -695,9 +733,9 @@ const startResearchFromPlan = async () => {
 
           if (todoTasks.value.length) {
             activeTaskId.value = todoTasks.value[0].id;
-            progressLogs.value.push("已生成任务清单");
+            trackStreamEvent(event, "已生成任务清单");
           } else {
-            progressLogs.value.push("未生成任务清单，使用默认任务继续");
+            trackStreamEvent(event, "未生成任务清单，使用默认任务继续");
           }
           return;
         }
@@ -723,7 +761,7 @@ const startResearchFromPlan = async () => {
             task.sourceItems = [];
             task.notices = [];
             activeTaskId.value = task.id;
-            progressLogs.value.push(`开始执行任务：${task.title}`);
+            trackStreamEvent(event, `开始执行任务：${task.title}`);
           } else if (status === "completed") {
             if (typeof event.summary === "string" && event.summary.trim()) {
               task.summary = event.summary.trim();
@@ -735,13 +773,13 @@ const startResearchFromPlan = async () => {
               task.sourcesSummary = event.sources_summary.trim();
               task.sourceItems = parseSources(task.sourcesSummary);
             }
-            progressLogs.value.push(`完成任务：${task.title}`);
+            trackStreamEvent(event, `完成任务：${task.title}`);
             if (activeTaskId.value === task.id) {
               pulse(summaryHighlight);
               pulse(sourcesHighlight);
             }
           } else if (status === "skipped") {
-            progressLogs.value.push(`任务跳过：${task.title}`);
+            trackStreamEvent(event, `任务跳过：${task.title}`);
           }
           return;
         }
@@ -768,13 +806,11 @@ const startResearchFromPlan = async () => {
             if (activeTaskId.value === task.id) {
               pulse(sourcesHighlight);
             }
-            progressLogs.value.push(`已更新任务来源：${task.title}`);
+            trackStreamEvent(event, `已更新任务来源：${task.title}`);
           }
 
           if (typeof payload.backend === "string") {
-            progressLogs.value.push(
-              `当前使用搜索后端：${payload.backend}`
-            );
+            trackStreamEvent(event, `当前使用搜索后端：${payload.backend}`);
           }
 
           applyNoteMetadata(task, payload);
@@ -828,7 +864,7 @@ const startResearchFromPlan = async () => {
               result,
               noteId,
               notePath,
-              timestamp: Date.now()
+              timestamp: eventTimestampMs(event)
             });
             if (noteId) {
               task.noteId = noteId;
@@ -839,12 +875,12 @@ const startResearchFromPlan = async () => {
             const logSummary = noteId
               ? `${agent} 调用了 ${tool}（任务 ${task.id}，笔记 ${noteId}）`
               : `${agent} 调用了 ${tool}（任务 ${task.id}）`;
-            progressLogs.value.push(logSummary);
+            trackStreamEvent(event, logSummary);
             if (activeTaskId.value === task.id) {
               pulse(toolHighlight);
             }
           } else {
-            progressLogs.value.push(`${agent} 调用了 ${tool}`);
+            trackStreamEvent(event, `${agent} 调用了 ${tool}`);
           }
           return;
         }
@@ -856,7 +892,7 @@ const startResearchFromPlan = async () => {
               : "";
           reportMarkdown.value = report || "报告生成失败，未获得有效内容";
           pulse(reportHighlight);
-          progressLogs.value.push("最终报告已生成");
+          trackStreamEvent(event, "最终报告已生成");
           // 报告写入 note 后刷新历史列表
           loadHistory();
           return;
@@ -868,7 +904,7 @@ const startResearchFromPlan = async () => {
               ? event.detail
               : "研究过程中发生错误";
           error.value = detail;
-          progressLogs.value.push("研究失败，已停止流程");
+          trackStreamEvent(event, "研究失败，已停止流程");
         }
       },
       { signal: controller.signal }

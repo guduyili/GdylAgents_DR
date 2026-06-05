@@ -9,7 +9,7 @@ from models import TodoItem
 
 def serialize_task(task: TodoItem) -> dict[str, Any]:
     """将 TodoItem 转为可 JSON 序列化的前端 payload。"""
-    return {
+    result = {
         "id": task.id,
         "title": task.title,
         "intent": task.intent,
@@ -21,3 +21,6 @@ def serialize_task(task: TodoItem) -> dict[str, Any]:
         "note_path": task.note_path,
         "stream_token": task.stream_token,
     }
+    if task.task_run_id:
+        result["task_run_id"] = task.task_run_id
+    return result

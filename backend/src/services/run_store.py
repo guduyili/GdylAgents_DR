@@ -104,4 +104,33 @@ class InMemoryResearchRunStore:
                     (run_id, event_type, timestamp, payload_json),
                 )
                 
-        
+    def complete_run(self, run_id: str) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE research_runs SET status = 'completed' WHERE run_id = ?",
+                (run_id,),
+            )
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock, self._connect() as conn:
+            run = conn.execute(
+                "SELECT run_id, topic, status FROM research_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if run is None:
+                return None
+            events = conn.execute(
+                """
+                SELECT payload_json
+                FROM research_events
+                WHERE run_id = ?
+                ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        return {
+            "run_id": run["run_id"],
+            "topic": run["topic"],
+            "status": run["status"],
+            "events": [json.loads(row["payload_json"]) for row in events],
+        }

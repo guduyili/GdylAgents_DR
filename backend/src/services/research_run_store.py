@@ -17,7 +17,7 @@ class ResearchRunStore(Protocol):
     def complete_run(self, run_id: str) -> None: ...
     def get_run(self, run_id: str) -> dict[str, Any] | None: ...
 
-    doc
+
 class InMemoryResearchRunStore:
     """内存实现：存储最近 N 次研究运行的完整时间线，线程安全。"""
 

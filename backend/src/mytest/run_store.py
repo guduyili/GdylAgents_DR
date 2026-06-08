@@ -134,3 +134,38 @@ class InMemoryResearchRunStore:
             "status": run["status"],
             "events": [json.loads(row["payload_json"]) for row in events],
         }
+
+    def _init_schema(self) -> None:
+        with self._lock, self._connect() as conn:
+            run = conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS research_runs(
+                    run_id TEXT PRIMARY KEY,
+                    topic TEXT NOT NULL,
+                    status TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS research_events(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    timestamp TEXT,
+                    payload_json TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES research_runs(run_id) ON DELETE CASCADE
+                )
+                """
+            )
+
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_research_events_run_id ON research_events(run_id)
+                """
+            )
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn

@@ -1,48 +1,37 @@
-const baseURL =
-  import.meta.env.VITE_API_BASE_URL || "";
-  // "http://localhost:8000";
+const baseURL = import.meta.env.VITE_API_BASE_URL || "";
 
-export interface ResearchRequest {
-  topic: string;
-  search_api?: string;
-  todo_items?: ResearchTodoItem[];
-}
+export type {
+  ResearchRequest,
+  ResearchTodoItem,
+  ResearchPlanResponse,
+  ResearchStreamEvent,
+  StreamOptions,
+  ReportItem,
+  ReportDetail,
+  ResearchRunSnapshot,
+  StatusEvent,
+  TodoListEvent,
+  SourcesEvent,
+  TaskSummaryChunkEvent,
+  TaskStatusEvent,
+  ToolCallEvent,
+  ReportNoteEvent,
+  FinalReportEvent,
+  DoneEvent,
+  ErrorEvent,
+  StreamBaseEvent,
+  TodoTaskEventItem
+} from "../types/research";
 
-export interface ResearchTodoItem {
-  id?: number;
-  title: string;
-  intent: string;
-  query: string;
-}
-
-export interface ResearchPlanResponse {
-  topic: string;
-  todo_items: ResearchTodoItem[];
-}
-
-export interface ResearchStreamEvent {
-  type: string;
-  run_id?: string;
-  timestamp?: string;
-  [key: string]: unknown;
-}
-
-export interface StreamOptions {
-  signal?: AbortSignal;
-}
-
-export interface ReportItem {
-  id: string;
-  title: string;
-  created_at: string;
-  tags: string[];
-}
-
-export interface ReportDetail {
-  id: string;
-  title: string;
-  content: string;
-}
+import type {
+  ResearchRequest,
+  ResearchPlanResponse,
+  ResearchRunSnapshot,
+  ResearchStreamEvent,
+  ReportDetail,
+  ReportItem,
+  StreamOptions
+} from "../types/research";
 
 export async function runResearchStream(
   payload: ResearchRequest,
@@ -61,9 +50,7 @@ export async function runResearchStream(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new Error(
-      errorText || `研究请求失败，状态码：${response.status}`
-    );
+    throw new Error(errorText || `研究请求失败，状态码：${response.status}`);
   }
 
   const body = response.body;
@@ -138,34 +125,22 @@ export async function planResearch(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new Error(
-      errorText || `研究规划失败，状态码：${response.status}`
-    );
+    throw new Error(errorText || `研究规划失败，状态码：${response.status}`);
   }
 
   return response.json();
 }
 
-/** 获取所有历史研究报告列表（conclusion 类型笔记） */
 export async function listReports(): Promise<ReportItem[]> {
   const res = await fetch(`${baseURL}/notes/reports`);
   if (!res.ok) return [];
   return res.json();
 }
 
-/** 获取单条报告的完整 Markdown 内容 */
 export async function getReport(noteId: string): Promise<ReportDetail> {
   const res = await fetch(`${baseURL}/notes/reports/${encodeURIComponent(noteId)}`);
   if (!res.ok) throw new Error("报告不存在");
   return res.json();
-}
-
-/** 查询某次研究运行的时间线事件 */
-export interface ResearchRunSnapshot {
-  run_id: string;
-  topic: string;
-  status: string;
-  events: ResearchStreamEvent[];
 }
 
 export async function getResearchRun(runId: string): Promise<ResearchRunSnapshot | null> {

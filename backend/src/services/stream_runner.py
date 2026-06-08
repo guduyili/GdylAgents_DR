@@ -14,6 +14,7 @@ from models import SummaryState, TodoItem
 from services.planner import PlanningService
 from services.reporter import ReportingService
 from services.research_run_store import ResearchRunStore
+from services.stream_events import normalize_stream_event
 from services.task_executor import TaskExecutor
 
 logger = logging.getLogger(__name__)
@@ -258,8 +259,5 @@ class StreamRunner:
         return payload
 
     def _with_observability(self, event: dict[str, Any], *, run_id: str) -> dict[str, Any]:
-        """为事件补充 run_id 和 timestamp 字段。"""
-        payload = dict(event)
-        payload.setdefault("run_id", run_id)
-        payload.setdefault("timestamp", self._clock())
-        return payload
+        """为事件补充 run_id/timestamp 并按强类型 SSE 协议校验。"""
+        return normalize_stream_event(event, run_id=run_id, timestamp=self._clock())

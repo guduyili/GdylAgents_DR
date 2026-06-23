@@ -172,10 +172,13 @@ backend/tests/test_research_runs_api.py
 
 ## 后续方向
 
-可以继续扩展：
+可以继续扩展，但建议顺序是“先可观测，再能力扩展”：
 
 1. 增加 `started_at` / `completed_at` / `error` 字段
-2. 增加 `fail_run(run_id, error)`
-3. 支持分页查询 events
-4. 支持按 topic / status 查询历史 run 列表
-5. 将 SQLite store 升级为 PostgreSQL store
+2. 增加 `duration_ms`，记录整次运行和关键阶段耗时
+3. 增加 `fail_run(run_id, error)`
+4. 支持分页查询 events
+5. 支持按 topic / status 查询历史 run 列表
+6. 为 Trace 面板提供按 `run_id` / `task_run_id` / `stream_token` 聚合后的事件视图
+7. 为 Timeline 面板提供按 `timestamp` 排序、带 `duration_ms` 的事件视图
+8. 将 SQLite store 升级为 PostgreSQL store

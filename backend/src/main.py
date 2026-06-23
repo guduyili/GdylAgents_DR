@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Literal, Optional
 
 from dotenv import load_dotenv
 
@@ -51,6 +51,10 @@ class ResearchRequest(BaseModel):
     todo_items: list["TodoItemRequest"] | None = Field(
         default=None,
         description="用户确认或编辑后的任务清单；为空时后端自动规划",
+    )
+    mode: Literal["deep", "quick"] | None = Field(
+        default=None,
+        description="研究模式：deep=完整规划；quick=跳过规划，单次搜索总结",
     )
 
 
@@ -99,6 +103,8 @@ def _build_config(payload: ResearchRequest) -> Configuration:
     overrides: Dict[str, Any] = {}
     if payload.search_api is not None:
         overrides["search_api"] = payload.search_api
+    if payload.mode is not None:
+        overrides["research_mode"] = payload.mode
     return Configuration.from_env(overrides=overrides)
 
 

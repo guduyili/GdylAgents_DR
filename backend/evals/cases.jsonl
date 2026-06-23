@@ -1,0 +1,2 @@
+{"topic": "AI Agent 架构", "mode": "quick", "expected_sections": ["#", "##"], "max_duration_seconds": 30}
+{"topic": "多模态模型进展", "mode": "deep", "expected_sections": ["#", "##", "参考"], "max_duration_seconds": 60}

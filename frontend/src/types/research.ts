@@ -1,6 +1,7 @@
 export interface ResearchRequest {
   topic: string;
   search_api?: string;
+  mode?: "deep" | "quick";
   todo_items?: ResearchTodoItem[];
 }
 
@@ -24,6 +25,8 @@ export interface StreamBaseEvent {
   task_id?: number | null;
   task_run_id?: string | null;
   stream_token?: string | null;
+  source?: string | null;
+  duration_ms?: number | null;
 }
 
 export interface StatusEvent extends StreamBaseEvent {
@@ -84,6 +87,8 @@ export interface ToolCallEvent extends StreamBaseEvent {
   tool: string;
   parameters?: Record<string, unknown> | unknown[] | string | null;
   result?: unknown;
+  input_preview?: string | null;
+  output_preview?: string | null;
   note_id?: string | null;
   note_path?: string | null;
 }
@@ -101,6 +106,35 @@ export interface FinalReportEvent extends StreamBaseEvent {
   report: string;
   note_id?: string | null;
   note_path?: string | null;
+}
+
+export interface ReviewResultEvent extends StreamBaseEvent {
+  type: "review_result";
+  passed: boolean;
+  score: number;
+  issues?: string[];
+  suggestions?: string[];
+}
+
+export interface FactCheckResultEvent extends StreamBaseEvent {
+  type: "fact_check_result";
+  passed: boolean;
+  score: number;
+  matched_sources?: string[];
+  warnings?: string[];
+  missing_terms?: string[];
+}
+
+export interface SkillLoadedEvent extends StreamBaseEvent {
+  type: "skill_loaded";
+  skill_name: string;
+  skill_description?: string | null;
+  preview?: string | null;
+}
+
+export interface PhaseDurationEvent extends StreamBaseEvent {
+  type: "phase_duration";
+  phase: "planning" | "search" | "summary" | "report" | "total";
 }
 
 export interface DoneEvent extends StreamBaseEvent {
@@ -121,6 +155,10 @@ export type ResearchStreamEvent =
   | ToolCallEvent
   | ReportNoteEvent
   | FinalReportEvent
+  | ReviewResultEvent
+  | FactCheckResultEvent
+  | SkillLoadedEvent
+  | PhaseDurationEvent
   | DoneEvent
   | ErrorEvent;
 
@@ -146,4 +184,5 @@ export interface ResearchRunSnapshot {
   topic: string;
   status: string;
   events: ResearchStreamEvent[];
+  phase_durations?: Record<string, number>;
 }

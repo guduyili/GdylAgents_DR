@@ -34,18 +34,31 @@ class SyncRunner:
         final_report_generator: FinalReportGenerator,
         drain_tool_events: DrainToolEvents,
         persist_final_report: PersistFinalReport,
+        research_mode: str = "deep",
     ) -> None:
         self._planner = planner
         self._task_executor = task_executor
         self._final_report_generator = final_report_generator
         self._drain_tool_events = drain_tool_events
         self._persist_final_report = persist_final_report
+        self._research_mode = research_mode
 
     def run(self, topic: str, todo_items: list[TodoItem] | None = None) -> SummaryStateOutput:
         state = SummaryState(research_topic=topic)
 
         if todo_items is not None:
             state.todo_items = todo_items
+        elif self._research_mode == "quick":
+            topic = state.research_topic.strip()
+            title = f"快速浏览：{topic[:40]}" if len(topic) > 40 else f"快速浏览：{topic}"
+            state.todo_items = [
+                TodoItem(
+                    id=1,
+                    title=title,
+                    intent="快速获取主题概览与要点摘要",
+                    query=topic,
+                )
+            ]
         else:
             state.todo_items = self._planner.plan_todo_list(state)
             self._drain_tool_events(state)
@@ -58,7 +71,10 @@ class SyncRunner:
                 # 同步模式不返回中间事件，但必须消耗生成器以触发执行副作用。
                 pass
 
-        report = self._final_report_generator.generate(state)
+        if self._research_mode == "quick":
+            report = self._build_quick_report(state)
+        else:
+            report = self._final_report_generator.generate(state)
         self._drain_tool_events(state)
         state.structured_report = report
         state.running_summary = report
@@ -69,3 +85,13 @@ class SyncRunner:
             report_markdown=report,
             todo_items=state.todo_items,
         )
+
+    @staticmethod
+    def _build_quick_report(state: SummaryState) -> str:
+        lines = [f"# {state.research_topic}", ""]
+        for task in state.todo_items:
+            lines.append(f"## {task.title}")
+            lines.append(task.summary or "暂无摘要")
+            if task.sources_summary:
+                lines.extend(["", "### 来源", task.sources_summary])
+        return "\n\n".join(lines).strip()

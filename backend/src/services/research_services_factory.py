@@ -11,12 +11,19 @@ from hello_agents.tools.builtin.note_tool import NoteTool
 
 from config import Configuration
 from services.agent_factory import AgentFactory
+from services.browser_fetch import BrowserFetchService
 from services.final_report_generator import FinalReportGenerator
 from services.llm_factory import create_llm
 from services.plan_runner import PlanRunner
 from services.planner import PlanningService
 from services.report_persistence import ReportPersistence
 from services.reporter import ReportingService
+from services.fact_check_service import FactCheckService
+from services.report_post_processor import ReportPostProcessor
+from services.research_pipeline import ResearchPipeline, ResearchPipelineConfig
+from services.review_service import ReviewService
+from services.skill_loader import SkillLoader
+from services.search import create_configured_search_backend
 from services.research_run_store import InMemoryResearchRunStore, ResearchRunStore, SQLiteResearchRunStore
 from services.stream_runner import StreamRunner
 from services.summarizer import SummarizationService
@@ -40,6 +47,12 @@ class ResearchServices:
     tool_event_bridge: ToolEventBridge
     report_persistence: ReportPersistence
     agent_factory: AgentFactory
+    agent_registry: Any
+    research_pipeline: ResearchPipeline
+    browser_fetch_service: BrowserFetchService
+    fact_check_service: FactCheckService
+    skill_loader: SkillLoader
+    report_post_processor: ReportPostProcessor
     todo_agent: Any
     report_agent: Any
     summarizer_factory: Any
@@ -81,9 +94,22 @@ def create_research_services(
         tools_registry=tooling.tools_registry,
         tool_call_listener=tool_tracker.record,
     )
-    todo_agent = agent_factory.create_todo_agent()
-    report_agent = agent_factory.create_report_agent()
+    pipeline_config = ResearchPipelineConfig.from_csv(config.research_pipeline)
+    agent_registry = agent_factory.create_registry()
     summarizer_factory = agent_factory.create_summarizer_factory()
+    research_pipeline = ResearchPipeline.from_registry(
+        agent_registry,
+        config=pipeline_config,
+        summarizer_factory=summarizer_factory,
+    )
+    browser_fetch_service = BrowserFetchService()
+    fact_check_service = FactCheckService()
+    skill_loader = SkillLoader(config.skills_workspace)
+    report_post_processor = ReportPostProcessor(
+        min_report_chars=200 if config.research_mode == "quick" else 300,
+    )
+    todo_agent = research_pipeline.planner_agent
+    report_agent = research_pipeline.reporter_agent
 
     planner = PlanningService(todo_agent, config)
     plan_runner = PlanRunner(
@@ -94,11 +120,20 @@ def create_research_services(
     reporting = ReportingService(report_agent, config)
     final_report_generator = FinalReportGenerator(reporting=reporting)
     state_lock = Lock()
+    search_backend = create_configured_search_backend(config)
+    review_service = ReviewService(
+        min_report_chars=200 if config.research_mode == "quick" else 500,
+    )
     task_executor = TaskExecutor(
         config=config,
         summarizer=summarizer,
         state_lock=state_lock,
         drain_tool_events=tool_event_bridge.drain,
+        search_backend=search_backend,
+        browser_fetch_service=browser_fetch_service,
+        fact_check_service=fact_check_service,
+        skill_loader=skill_loader,
+        pipeline_config=pipeline_config,
     )
     sync_runner = SyncRunner(
         planner=planner,
@@ -106,6 +141,7 @@ def create_research_services(
         final_report_generator=final_report_generator,
         drain_tool_events=tool_event_bridge.drain,
         persist_final_report=report_persistence.persist_final_report,
+        research_mode=config.research_mode,
     )
     stream_runner = StreamRunner(
         planner=planner,
@@ -116,6 +152,12 @@ def create_research_services(
         persist_final_report=report_persistence.persist_final_report,
         serialize_task=serialize_task,
         run_store=run_store,
+        max_concurrent_tasks=config.max_concurrent_tasks,
+        research_mode=config.research_mode,
+        review_service=review_service,
+        enable_report_review=config.enable_report_review,
+        pipeline_config=pipeline_config,
+        report_post_processor=report_post_processor,
     )
 
     return ResearchServices(
@@ -127,6 +169,12 @@ def create_research_services(
         tool_event_bridge=tool_event_bridge,
         report_persistence=report_persistence,
         agent_factory=agent_factory,
+        agent_registry=agent_registry,
+        research_pipeline=research_pipeline,
+        browser_fetch_service=browser_fetch_service,
+        fact_check_service=fact_check_service,
+        skill_loader=skill_loader,
+        report_post_processor=report_post_processor,
         todo_agent=todo_agent,
         report_agent=report_agent,
         summarizer_factory=summarizer_factory,

@@ -226,6 +226,7 @@ flowchart TD
 | **note_id 写回** | `drain()` 中调用 `_attach_note_to_task()`，使 `TodoItem.note_id` 和 `note_path` 实时更新，后续 `task_status` 事件可携带笔记路径给前端 |
 | **游标机制** | `_cursor` 记录已消费位置，多次 `drain()` 只提取增量事件，避免重复消费 |
 | **note_path 附加** | 构建 payload 时自动拼接 `notes_workspace / note_id.md`，前端可直接打开本地文件 |
+| **可观测性字段** | 后续继续保证工具事件携带 `run_id`、`task_run_id`、`stream_token`、`timestamp`，并补充工具调用 `duration_ms`，方便 Trace / Timeline 面板排查慢调用 |
 
 ---
 

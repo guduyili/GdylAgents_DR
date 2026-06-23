@@ -8,7 +8,7 @@ def test_in_memory_research_run_store_returns_run_timeline() -> None:
     store.start_run(run_id="run-001", topic="AI Agent")
     store.record_event("run-001", {"type": "status", "timestamp": "t1", "run_id": "run-001"})
     store.record_event("run-001", {"type": "tool_call", "timestamp": "t2", "run_id": "run-001"})
-    store.complete_run("run-001")
+    store.complete_run("run-001", phase_durations={"planning": 10, "total": 100})
 
     snapshot = store.get_run("run-001")
 
@@ -16,6 +16,7 @@ def test_in_memory_research_run_store_returns_run_timeline() -> None:
         "run_id": "run-001",
         "topic": "AI Agent",
         "status": "completed",
+        "phase_durations": {"planning": 10, "total": 100},
         "events": [
             {"type": "status", "timestamp": "t1", "run_id": "run-001"},
             {"type": "tool_call", "timestamp": "t2", "run_id": "run-001"},

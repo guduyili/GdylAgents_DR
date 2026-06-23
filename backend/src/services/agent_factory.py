@@ -14,6 +14,7 @@ from prompts import (
     task_summarizer_instructions,
     todo_planner_system_prompt,
 )
+from services.agent_registry import AgentRegistry
 from services.llm_factory import create_llm
 
 AgentT = TypeVar("AgentT")
@@ -79,3 +80,11 @@ class AgentFactory:
             name="任务总结专家",
             system_prompt=task_summarizer_instructions.strip(),
         )
+
+    def create_registry(self) -> AgentRegistry:
+        """Build the default research pipeline registry."""
+        registry = AgentRegistry()
+        registry.register("planner", self.create_todo_agent)
+        registry.register("summarizer", lambda: self.create_summarizer_factory()())
+        registry.register("reporter", self.create_report_agent)
+        return registry

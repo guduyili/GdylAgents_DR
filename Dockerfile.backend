@@ -23,13 +23,26 @@ ENV RUN_STORE_BACKEND=sqlite
 ENV RUN_STORE_DB_PATH=/app/src/data/research_runs.sqlite3
 RUN uv sync --frozen --no-dev --no-install-project
 
-# 复制源码
+# 复制源码与 Skill 工作区（与 src/ 同级，运行时 WORKDIR 为 /app/src）
 COPY src/ ./src/
+COPY skills/ ./src/skills/
 
 WORKDIR /app/src
 
 # 创建笔记目录和 SQLite run_store 数据目录（对应 compose 挂载路径）
 RUN mkdir -p /app/src/note /app/src/data
+
+# 研究流水线与可靠性默认值（compose / .env 可覆盖）
+ENV SKILLS_WORKSPACE=/app/src/skills
+ENV RESEARCH_MODE=deep
+ENV ENABLE_FACT_CHECK=true
+ENV ENABLE_REPORT_REVIEW=true
+ENV RESEARCH_PIPELINE=plan,search,summarize,fact_check,report,review
+ENV ENABLE_BROWSER_FETCH=false
+ENV MAX_CONCURRENT_TASKS=4
+ENV SEARCH_TIMEOUT_SECONDS=60
+ENV SUMMARY_TIMEOUT_SECONDS=120
+ENV SEARCH_FALLBACK_CHAIN=duckduckgo,tavily
 
 EXPOSE 8000
 

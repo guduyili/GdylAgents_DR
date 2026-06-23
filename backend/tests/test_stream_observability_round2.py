@@ -27,6 +27,7 @@ class FakeRunStore:
         self.started: list[dict] = []
         self.events: list[dict] = []
         self.completed: list[str] = []
+        self.phase_durations: dict[str, int] | None = None
 
     def start_run(self, *, run_id: str, topic: str) -> None:
         self.started.append({"run_id": run_id, "topic": topic})
@@ -34,8 +35,10 @@ class FakeRunStore:
     def record_event(self, run_id: str, event: dict) -> None:
         self.events.append({"run_id": run_id, "event": event})
 
-    def complete_run(self, run_id: str) -> None:
+    def complete_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None:
         self.completed.append(run_id)
+        if phase_durations is not None:
+            self.phase_durations = phase_durations
 
 
 def serialize_task(task: TodoItem) -> dict:

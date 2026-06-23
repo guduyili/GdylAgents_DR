@@ -82,16 +82,16 @@ def test_execute_stream_skips_task_when_search_has_no_results() -> None:
     assert task.status == "skipped"
     assert task.notices == ["没有结果"]
     assert events == [
-        {"type": "status", "message": "没有结果", "task_id": 1, "step": 2},
+        {"type": "status", "message": "没有结果", "task_id": 1, "step": 2, "source": "task_executor"},
         {
             "type": "task_status",
             "task_id": 1,
             "status": "skipped",
             "title": "任务一",
             "intent": "了解现状",
-            "note_id": None,
-            "note_path": None,
             "step": 2,
+            "source": "task_executor",
+            "duration_ms": 0,
         },
     ]
     assert state.web_research_results == []

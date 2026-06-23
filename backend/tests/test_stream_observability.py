@@ -77,5 +77,6 @@ def test_stream_runner_enriches_tool_events_with_run_id_timestamp_and_task_chann
             "stream_token": "task_1",
             "run_id": "run-test-002",
             "timestamp": "2026-06-05T12:00:01Z",
+            "source": "tool",
         }
     ]

@@ -12,9 +12,20 @@ services:
       NOTES_WORKSPACE: /app/src/note
       RUN_STORE_BACKEND: sqlite
       RUN_STORE_DB_PATH: /app/src/data/research_runs.sqlite3
+      SKILLS_WORKSPACE: /app/src/skills
+      RESEARCH_MODE: deep
+      ENABLE_FACT_CHECK: "true"
+      ENABLE_REPORT_REVIEW: "true"
+      RESEARCH_PIPELINE: plan,search,summarize,fact_check,report,review
+      ENABLE_BROWSER_FETCH: "false"
+      MAX_CONCURRENT_TASKS: "4"
+      SEARCH_TIMEOUT_SECONDS: "60"
+      SUMMARY_TIMEOUT_SECONDS: "120"
+      SEARCH_FALLBACK_CHAIN: duckduckgo,tavily
     volumes:
       - notes_data:/app/src/note
       - run_store_data:/app/src/data
+      - ./backend/skills:/app/src/skills:ro
     networks:
       - internal
     # 不对外暴露端口，仅通过 nginx 反代访问

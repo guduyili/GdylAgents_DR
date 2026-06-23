@@ -28,6 +28,17 @@
 
       <section class="options">
         <label class="field option">
+          <span>研究模式</span>
+          <select
+            :value="researchMode"
+            @change="$emit('update:researchMode', ($event.target as HTMLSelectElement).value as 'deep' | 'quick')"
+          >
+            <option value="deep">深度研究（规划 + 多任务）</option>
+            <option value="quick">快速浏览（单次搜索总结）</option>
+          </select>
+        </label>
+
+        <label class="field option">
           <span>搜索引擎</span>
           <select
             :value="searchApi"
@@ -47,7 +58,17 @@
             <svg v-if="loading" class="spinner" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="9" stroke-width="3" />
             </svg>
-            {{ loading ? "处理中..." : planReady ? "重新生成计划" : "生成研究计划" }}
+            {{
+              loading
+                ? "处理中..."
+                : researchMode === "quick"
+                  ? planReady
+                    ? "重新开始快速研究"
+                    : "开始快速研究"
+                  : planReady
+                    ? "重新生成计划"
+                    : "生成研究计划"
+            }}
           </span>
         </button>
         <button
@@ -74,6 +95,7 @@
 defineProps<{
   topic: string;
   searchApi: string;
+  researchMode: "deep" | "quick";
   searchOptions: string[];
   loading: boolean;
   planning: boolean;
@@ -87,5 +109,6 @@ defineEmits<{
   'open-history': [];
   'update:topic': [value: string];
   'update:searchApi': [value: string];
+  'update:researchMode': [value: "deep" | "quick"];
 }>();
 </script>

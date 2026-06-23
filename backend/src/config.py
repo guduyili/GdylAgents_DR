@@ -1,7 +1,7 @@
 """配置管理：从环境变量加载深度研究助手的运行参数。"""
 import os
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,11 @@ class Configuration(BaseModel):
         title="获取完整页面",
         description="搜索时是否抓取完整页面内容",
     )
+    enable_browser_fetch: bool = Field(
+        default=False,
+        title="启用浏览器抓取",
+        description="当 HTTP 无法补全页面正文时，尝试使用 Playwright 渲染页面",
+    )
     ollama_base_url: str = Field(
         default="http://localhost:11434",
         title="Ollama 地址",
@@ -108,6 +113,54 @@ class Configuration(BaseModel):
         title="研究运行 SQLite 数据库路径",
         description="run_store_backend=sqlite 时使用的 SQLite 数据库路径",
     )
+    max_concurrent_tasks: int = Field(
+        default=4,
+        ge=1,
+        title="最大并发任务数",
+        description="流式研究时同时执行搜索与总结的任务上限",
+    )
+    search_timeout_seconds: int = Field(
+        default=60,
+        ge=1,
+        title="搜索超时秒数",
+        description="单个任务搜索阶段的最大等待时间",
+    )
+    summary_timeout_seconds: int = Field(
+        default=120,
+        ge=1,
+        title="总结超时秒数",
+        description="单个任务总结阶段的最大等待时间",
+    )
+    search_fallback_chain: list[SearchAPI] = Field(
+        default_factory=lambda: [SearchAPI.DUCKDUCKGO, SearchAPI.TAVILY],
+        title="搜索后端降级链",
+        description="主搜索后端失败时依次尝试的后端列表（不含主后端）",
+    )
+    research_mode: Literal["deep", "quick"] = Field(
+        default="deep",
+        title="研究模式",
+        description="deep=完整规划与报告；quick=跳过规划，单次搜索总结即出结果",
+    )
+    enable_report_review: bool = Field(
+        default=True,
+        title="启用报告评审",
+        description="报告生成后执行规则评审并推送 review_result 事件",
+    )
+    enable_fact_check: bool = Field(
+        default=True,
+        title="启用事实核对",
+        description="任务总结完成后执行轻量 fact-check 并推送 fact_check_result 事件",
+    )
+    skills_workspace: str = Field(
+        default="./skills",
+        title="Skill 工作区",
+        description="按需加载 SKILL.md 指引的目录",
+    )
+    research_pipeline: str = Field(
+        default="plan,search,summarize,fact_check,report,review",
+        title="研究流水线阶段",
+        description="逗号分隔阶段列表，用于开关 fact_check / review 等步骤",
+    )
 
 
     @classmethod
@@ -136,6 +189,7 @@ class Configuration(BaseModel):
             "ollama_base_url": os.getenv("OLLAMA_BASE_URL"),
             "max_web_research_loops": os.getenv("MAX_WEB_RESEARCH_LOOPS"),
             "fetch_full_page": os.getenv("FETCH_FULL_PAGE"),
+            "enable_browser_fetch": os.getenv("ENABLE_BROWSER_FETCH"),
             "strip_thinking_tokens": os.getenv("STRIP_THINKING_TOKENS"),
             "use_tool_calling": os.getenv("USE_TOOL_CALLING"),
             "search_api": os.getenv("SEARCH_API"),
@@ -143,12 +197,26 @@ class Configuration(BaseModel):
             "notes_workspace": os.getenv("NOTES_WORKSPACE"),
             "run_store_backend": os.getenv("RUN_STORE_BACKEND"),
             "run_store_db_path": os.getenv("RUN_STORE_DB_PATH"),
+            "max_concurrent_tasks": os.getenv("MAX_CONCURRENT_TASKS"),
+            "search_timeout_seconds": os.getenv("SEARCH_TIMEOUT_SECONDS"),
+            "summary_timeout_seconds": os.getenv("SUMMARY_TIMEOUT_SECONDS"),
+            "research_mode": os.getenv("RESEARCH_MODE"),
+            "enable_report_review": os.getenv("ENABLE_REPORT_REVIEW"),
+            "enable_fact_check": os.getenv("ENABLE_FACT_CHECK"),
+            "skills_workspace": os.getenv("SKILLS_WORKSPACE"),
+            "research_pipeline": os.getenv("RESEARCH_PIPELINE"),
         }
 
         # setdefault：别名不覆盖第一步已读取的值
         for key, value in env_aliases.items():
             if value is not None:
                 raw_values.setdefault(key, value)
+
+        fallback_raw = os.getenv("SEARCH_FALLBACK_CHAIN")
+        if fallback_raw is not None and "search_fallback_chain" not in raw_values:
+            raw_values["search_fallback_chain"] = [
+                item.strip() for item in fallback_raw.split(",") if item.strip()
+            ]
 
         # 第三步：外部 overrides 优先级最高
         if overrides:

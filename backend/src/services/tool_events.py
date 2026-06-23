@@ -2,7 +2,9 @@
 工具调用事件追踪器: 收集Agent的工具调用记录,供日志记录和前端SSE推送使用
 """
 from __future__ import annotations
+import json
 import re
+import time
 
 import logging
 
@@ -14,6 +16,7 @@ from typing import Any, Callable, Optional
 
 
 from models import SummaryState, TodoItem
+from services.stream_events import build_stream_event
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,7 @@ class ToolCallEvent:
     result: str                          # 工具返回的结果文本
     task_id: Optional[int]               # 关联的任务 ID（可能无法推断）
     note_id: Optional[str]               # 关联的笔记 ID（仅 note 工具有）
+    duration_ms: int = 0                 # 工具调用耗时；当前回调只有完成态，默认记录为 0
 
 
 class ToolCallTracker:
@@ -39,12 +43,13 @@ class ToolCallTracker:
     - 同步模式：事件积累在内部队列，由 drain() 批量提取
     - 流式模式：注册 event_sink 后，每次调用立即触发回调推送给前端
     """
-    def __init__(self, notes_workspace: Optional[str]) -> None:
+    def __init__(self, notes_workspace: Optional[str], monotonic_clock: Callable[[], float] | None = None) -> None:
         self._notes_workspace = notes_workspace         # 笔记存储目录，用于拼接note_path
         self._events: list[ToolCallEvent] = []                                  # 用于记录所有已记录的事件列表
         self._cursor = 0                                                        # 已被 drain() 的事件数
         self._lock = Lock()                                 # 保护_events 和 _cursor 的并发访问
         self._event_sink: Optional[Callable[[dict[str,Any]],None]] = None       # 实时推送回调
+        self._monotonic_clock = monotonic_clock or time.monotonic
     
     def record(self, payload: dict[str,Any])->None:
         """记录一次工具调用事件。
@@ -81,6 +86,7 @@ class ToolCallTracker:
             result=result_text,
             task_id=task_id,
             note_id=note_id,
+            duration_ms=0,
         )
 
         with self._lock:
@@ -175,16 +181,22 @@ class ToolCallTracker:
         """
         将内部 ToolCallEvent 转换为可推送给前端的 SSE 载荷字典
         """
-        payload = {
-            "type": "tool_call",
-            "event_id": event.id,
-            "agent": event.agent,
-            "tool": event.tool,
-            "parameters": event.parsed_parameters,
-            "result": event.result,
-            "task_id": event.task_id,
-            "note_id": event.note_id,
-        }
+        payload = build_stream_event(
+            {
+                "type": "tool_call",
+                "event_id": event.id,
+                "agent": event.agent,
+                "tool": event.tool,
+                "parameters": event.parsed_parameters,
+                "result": event.result,
+                "input_preview": self._preview_text(event.parsed_parameters),
+                "output_preview": self._preview_text(event.result),
+                "task_id": event.task_id,
+                "note_id": event.note_id,
+                "source": "tool",
+                "duration_ms": event.duration_ms,
+            }
+        )
         # 如果有笔记目录配置， 附加本地文件路径方便前端打开
         if event.note_id and self._notes_workspace:
             note_path = Path(self._notes_workspace) / f"{event.note_id}.md"
@@ -192,6 +204,23 @@ class ToolCallTracker:
         if step is not None:
             payload["step"] = step
         return payload
+
+    @staticmethod
+    def _preview_text(value: Any, *, limit: int = 200) -> str:
+        """截取工具参数或结果的前若干字符，供前端轻量展示。"""
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            text = value
+        else:
+            try:
+                text = json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                text = str(value)
+        text = text.strip()
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit]}…"
     
     # ------------------------------------------------------------------
     # 私有辅助方法

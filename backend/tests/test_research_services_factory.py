@@ -20,6 +20,13 @@ def test_create_research_services_wires_core_runners_with_notes_disabled() -> No
     assert services.stream_runner is not None
     assert services.planner is not None
     assert services.task_executor is not None
+    assert services.agent_registry is not None
+    assert services.browser_fetch_service is not None
+    assert services.agent_registry.roles() == ["planner", "reporter", "summarizer"]
+    assert services.research_pipeline is not None
+    assert services.fact_check_service is not None
+    assert services.skill_loader is not None
+    assert services.report_post_processor is not None
     assert isinstance(services.run_store, InMemoryResearchRunStore)
 
 

@@ -18,6 +18,8 @@ class BaseStreamEvent(BaseModel):
     task_id: int | None = None
     task_run_id: str | None = None
     stream_token: str | None = None
+    source: str | None = None
+    duration_ms: int | None = None
 
 
 class StatusEvent(BaseStreamEvent):
@@ -82,8 +84,15 @@ class ToolCallEvent(BaseStreamEvent):
     tool: str
     parameters: dict[str, Any] | list[Any] | str | None = None
     result: Any = None
+    input_preview: str | None = None
+    output_preview: str | None = None
     note_id: str | None = None
     note_path: str | None = None
+
+
+class PhaseDurationEvent(BaseStreamEvent):
+    type: Literal["phase_duration"] = "phase_duration"
+    phase: Literal["planning", "search", "summary", "report", "total"]
 
 
 class ReportNoteEvent(BaseStreamEvent):
@@ -99,6 +108,30 @@ class FinalReportEvent(BaseStreamEvent):
     report: str
     note_id: str | None = None
     note_path: str | None = None
+
+
+class ReviewResultEvent(BaseStreamEvent):
+    type: Literal["review_result"] = "review_result"
+    passed: bool
+    score: int = Field(ge=0, le=100)
+    issues: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class FactCheckResultEvent(BaseStreamEvent):
+    type: Literal["fact_check_result"] = "fact_check_result"
+    passed: bool
+    score: int = Field(ge=0, le=100)
+    matched_sources: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    missing_terms: list[str] = Field(default_factory=list)
+
+
+class SkillLoadedEvent(BaseStreamEvent):
+    type: Literal["skill_loaded"] = "skill_loaded"
+    skill_name: str
+    skill_description: str | None = None
+    preview: str | None = None
 
 
 class DoneEvent(BaseStreamEvent):
@@ -119,11 +152,36 @@ PublicStreamEvent: TypeAlias = (
     | ToolCallEvent
     | ReportNoteEvent
     | FinalReportEvent
+    | ReviewResultEvent
+    | FactCheckResultEvent
+    | SkillLoadedEvent
+    | PhaseDurationEvent
     | DoneEvent
     | ErrorEvent
 )
 
 _STREAM_EVENT_ADAPTER = TypeAdapter(PublicStreamEvent)
+
+_DRAFT_RUN_ID = "__draft__"
+_DRAFT_TIMESTAMP = "__draft__"
+
+
+def build_stream_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Validate a partial SSE payload against the public event contract.
+
+    ``run_id`` and ``timestamp`` are injected with placeholders for validation,
+    then removed so callers can enrich events later via ``normalize_stream_event``.
+    """
+    payload = dict(event)
+    payload.setdefault("run_id", _DRAFT_RUN_ID)
+    payload.setdefault("timestamp", _DRAFT_TIMESTAMP)
+    validated = _STREAM_EVENT_ADAPTER.validate_python(payload)
+    result = validated.model_dump(exclude_none=True)
+    if result.get("run_id") == _DRAFT_RUN_ID:
+        result.pop("run_id", None)
+    if result.get("timestamp") == _DRAFT_TIMESTAMP:
+        result.pop("timestamp", None)
+    return result
 
 
 def normalize_stream_event(event: dict[str, Any], *, run_id: str, timestamp: str) -> dict[str, Any]:

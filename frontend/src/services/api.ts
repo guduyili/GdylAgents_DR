@@ -17,6 +17,7 @@ export type {
   ToolCallEvent,
   ReportNoteEvent,
   FinalReportEvent,
+  ReviewResultEvent,
   DoneEvent,
   ErrorEvent,
   StreamBaseEvent,
@@ -32,6 +33,7 @@ import type {
   ReportItem,
   StreamOptions
 } from "../types/research";
+import { parseResearchStreamEvent } from "../types/researchSchemas";
 
 export async function runResearchStream(
   payload: ResearchRequest,
@@ -75,8 +77,12 @@ export async function runResearchStream(
         const dataPayload = rawEvent.slice(5).trim();
         if (dataPayload) {
           try {
-            const event = JSON.parse(dataPayload) as ResearchStreamEvent;
-            onEvent(event);
+            const parsed = JSON.parse(dataPayload) as unknown;
+            const event = parseResearchStreamEvent(parsed);
+            if (!event) {
+              continue;
+            }
+            onEvent(event as ResearchStreamEvent);
 
             if (event.type === "error" || event.type === "done") {
               return;
@@ -97,8 +103,11 @@ export async function runResearchStream(
           const dataPayload = rawEvent.slice(5).trim();
           if (dataPayload) {
             try {
-              const event = JSON.parse(dataPayload) as ResearchStreamEvent;
-              onEvent(event);
+              const parsed = JSON.parse(dataPayload) as unknown;
+              const event = parseResearchStreamEvent(parsed);
+              if (event) {
+                onEvent(event as ResearchStreamEvent);
+              }
             } catch (error) {
               console.error("解析流式事件失败：", error, dataPayload);
             }

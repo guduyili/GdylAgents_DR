@@ -14,7 +14,7 @@ class ResearchRunStore(Protocol):
 
     def start_run(self, *, run_id: str, topic: str) -> None: ...
     def record_event(self, run_id: str, event: dict[str, Any]) -> None: ...
-    def complete_run(self, run_id: str) -> None: ...
+    def complete_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None: ...
     def get_run(self, run_id: str) -> dict[str, Any] | None: ...
 
 
@@ -42,11 +42,13 @@ class InMemoryResearchRunStore:
             if run is not None:
                 run["events"].append(event)
 
-    def complete_run(self, run_id: str) -> None:
+    def complete_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None:
         with self._lock:
             run = self._runs.get(run_id)
             if run is not None:
                 run["status"] = "completed"
+                if phase_durations is not None:
+                    run["phase_durations"] = dict(phase_durations)
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self._lock:
@@ -55,6 +57,8 @@ class InMemoryResearchRunStore:
                 return None
             snapshot = dict(run)
             snapshot["events"] = list(run["events"])
+            if "phase_durations" in run:
+                snapshot["phase_durations"] = dict(run["phase_durations"])
             return snapshot
 
     def _evict_if_needed(self) -> None:
@@ -106,17 +110,26 @@ class SQLiteResearchRunStore:
                 (run_id, event_type, timestamp, payload_json),
             )
 
-    def complete_run(self, run_id: str) -> None:
+    def complete_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None:
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE research_runs SET status = 'completed' WHERE run_id = ?",
                 (run_id,),
             )
+            if phase_durations is not None:
+                conn.execute(
+                    """
+                    UPDATE research_runs
+                    SET phase_durations_json = ?
+                    WHERE run_id = ?
+                    """,
+                    (json.dumps(phase_durations, ensure_ascii=False), run_id),
+                )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self._lock, self._connect() as conn:
             run = conn.execute(
-                "SELECT run_id, topic, status FROM research_runs WHERE run_id = ?",
+                "SELECT run_id, topic, status, phase_durations_json FROM research_runs WHERE run_id = ?",
                 (run_id,),
             ).fetchone()
             if run is None:
@@ -130,12 +143,16 @@ class SQLiteResearchRunStore:
                 """,
                 (run_id,),
             ).fetchall()
-        return {
+        snapshot: dict[str, Any] = {
             "run_id": run["run_id"],
             "topic": run["topic"],
             "status": run["status"],
             "events": [json.loads(row["payload_json"]) for row in events],
         }
+        phase_json = run["phase_durations_json"]
+        if phase_json:
+            snapshot["phase_durations"] = json.loads(phase_json)
+        return snapshot
 
     def _init_schema(self) -> None:
         with self._lock, self._connect() as conn:
@@ -144,7 +161,8 @@ class SQLiteResearchRunStore:
                 CREATE TABLE IF NOT EXISTS research_runs (
                     run_id TEXT PRIMARY KEY,
                     topic TEXT NOT NULL,
-                    status TEXT NOT NULL
+                    status TEXT NOT NULL,
+                    phase_durations_json TEXT
                 )
                 """
             )
@@ -163,6 +181,12 @@ class SQLiteResearchRunStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_research_events_run_id ON research_events(run_id)"
             )
+            try:
+                conn.execute(
+                    "ALTER TABLE research_runs ADD COLUMN phase_durations_json TEXT"
+                )
+            except sqlite3.OperationalError:
+                pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)

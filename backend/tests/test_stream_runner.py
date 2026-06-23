@@ -90,6 +90,7 @@ def test_stream_runner_runs_provided_tasks_and_emits_final_report() -> None:
     assert {event["type"] for event in events} == {
         "status",
         "todo_list",
+        "phase_duration",
         "task_status",
         "sources",
         "report_note",
@@ -99,8 +100,10 @@ def test_stream_runner_runs_provided_tasks_and_emits_final_report() -> None:
     final_reports = [event for event in events if event.get("type") == "final_report"]
     assert final_reports
     assert final_reports[0]["report"] == "# 报告"
-    assert final_reports[0]["note_id"] is None
-    assert final_reports[0]["note_path"] is None
+    assert final_reports[0].get("note_id") is None
+    assert final_reports[0].get("note_path") is None
+    assert final_reports[0]["source"] == "reporter"
+    assert final_reports[0]["duration_ms"] is not None
     assert "run_id" in final_reports[0]
     assert "timestamp" in final_reports[0]
     assert events[-1]["type"] == "done"
@@ -138,8 +141,10 @@ def test_stream_runner_marks_task_failed_when_executor_raises() -> None:
     assert failed_event["error"] == "boom"
     assert failed_event["title"] == "任务一"
     assert failed_event["intent"] == "研究"
-    assert failed_event["note_id"] is None
-    assert failed_event["note_path"] is None
+    assert failed_event.get("note_id") is None
+    assert failed_event.get("note_path") is None
+    assert failed_event["source"] == "task_executor"
+    assert failed_event["duration_ms"] is not None
     assert failed_event["step"] == 1
     assert failed_event["stream_token"] == "task_1"
     assert "run_id" in failed_event

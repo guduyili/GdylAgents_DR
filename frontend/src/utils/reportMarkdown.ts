@@ -73,3 +73,35 @@ export function renderReportHtml(markdown: string): string {
     ADD_ATTR: ["target", "rel", "id"]
   });
 }
+
+export function computeContainerScrollTop(
+  containerScrollTop: number,
+  containerRectTop: number,
+  targetRectTop: number,
+  offset = 12
+): number {
+  return Math.max(0, containerScrollTop + (targetRectTop - containerRectTop) - offset);
+}
+
+/** Scroll a target element inside a scrollable container without moving ancestor panels. */
+export function scrollElementIntoContainer(
+  container: HTMLElement,
+  target: HTMLElement,
+  options?: { offset?: number; behavior?: ScrollBehavior }
+): void {
+  const offset = options?.offset ?? 12;
+  const behavior = options?.behavior ?? "smooth";
+  const containerRect = container.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const nextTop = computeContainerScrollTop(
+    container.scrollTop,
+    containerRect.top,
+    targetRect.top,
+    offset
+  );
+
+  container.scrollTo({
+    top: nextTop,
+    behavior
+  });
+}

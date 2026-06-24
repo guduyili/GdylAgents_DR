@@ -24,7 +24,7 @@
           type="button"
           class="report-toc-link"
           :class="`level-${heading.level}`"
-          @click="scrollToHeading(heading.id)"
+          @click="scrollToHeading($event, heading.id)"
         >
           {{ heading.text }}
         </button>
@@ -37,7 +37,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { extractReportHeadings, renderReportHtml } from "../utils/reportMarkdown";
+import {
+  extractReportHeadings,
+  renderReportHtml,
+  scrollElementIntoContainer
+} from "../utils/reportMarkdown";
 
 const props = defineProps<{
   markdown: string;
@@ -64,12 +68,20 @@ async function copyPlainText() {
   }
 }
 
-function scrollToHeading(id: string) {
+function scrollToHeading(event: MouseEvent, id: string) {
+  event.preventDefault();
+
   const root = contentRef.value;
   if (!root) {
     return;
   }
+
   const target = root.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
-  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!target) {
+    return;
+  }
+
+  scrollElementIntoContainer(root, target);
+  (event.currentTarget as HTMLButtonElement | null)?.blur();
 }
 </script>

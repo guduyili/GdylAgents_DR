@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractReportHeadings, renderReportHtml } from "./reportMarkdown";
+import {
+  computeContainerScrollTop,
+  extractReportHeadings,
+  renderReportHtml
+} from "./reportMarkdown";
 
 describe("reportMarkdown", () => {
   it("extracts nested headings for table of contents", () => {
@@ -17,5 +21,10 @@ describe("reportMarkdown", () => {
     expect(html).toContain('href="https://example.com"');
     expect(html).toContain("target=\"_blank\"");
     expect(html).toContain("示例");
+  });
+
+  it("computes in-container scroll offset without moving ancestor panels", () => {
+    expect(computeContainerScrollTop(0, 0, 180, 10)).toBe(170);
+    expect(computeContainerScrollTop(40, 100, 120, 12)).toBe(48);
   });
 });

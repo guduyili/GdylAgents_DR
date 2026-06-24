@@ -212,8 +212,10 @@ class Configuration(BaseModel):
             if value is not None:
                 raw_values.setdefault(key, value)
 
-        fallback_raw = os.getenv("SEARCH_FALLBACK_CHAIN")
-        if fallback_raw is not None and "search_fallback_chain" not in raw_values:
+        fallback_raw = raw_values.get("search_fallback_chain")
+        if fallback_raw is None:
+            fallback_raw = os.getenv("SEARCH_FALLBACK_CHAIN")
+        if isinstance(fallback_raw, str):
             raw_values["search_fallback_chain"] = [
                 item.strip() for item in fallback_raw.split(",") if item.strip()
             ]

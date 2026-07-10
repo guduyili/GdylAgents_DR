@@ -161,6 +161,21 @@ class Configuration(BaseModel):
         title="研究流水线阶段",
         description="逗号分隔阶段列表，用于开关 fact_check / review 等步骤",
     )
+    cancel_broadcast_backend: Literal["memory", "redis"] = Field(
+        default="memory",
+        title="取消广播后端",
+        description="memory=单进程；redis=多 worker 通过 Pub/Sub 广播取消信号",
+    )
+    redis_url: Optional[str] = Field(
+        default=None,
+        title="Redis URL",
+        description="cancel_broadcast_backend=redis 时使用的连接地址",
+    )
+    redis_cancel_channel: str = Field(
+        default="research:runs:cancel",
+        title="Redis 取消频道",
+        description="发布/订阅取消 run_id 的 Redis channel 名称",
+    )
 
 
     @classmethod
@@ -205,6 +220,9 @@ class Configuration(BaseModel):
             "enable_fact_check": os.getenv("ENABLE_FACT_CHECK"),
             "skills_workspace": os.getenv("SKILLS_WORKSPACE"),
             "research_pipeline": os.getenv("RESEARCH_PIPELINE"),
+            "cancel_broadcast_backend": os.getenv("CANCEL_BROADCAST_BACKEND"),
+            "redis_url": os.getenv("REDIS_URL"),
+            "redis_cancel_channel": os.getenv("REDIS_CANCEL_CHANNEL"),
         }
 
         # setdefault：别名不覆盖第一步已读取的值

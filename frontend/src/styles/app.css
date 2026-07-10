@@ -995,6 +995,11 @@ select:focus {
   color: #b91c1c;
 }
 
+.task-status.cancelled {
+  background: rgba(148, 163, 184, 0.22);
+  color: #475569;
+}
+
 .task-query {
   margin-top: auto;
   padding: 10px 12px;

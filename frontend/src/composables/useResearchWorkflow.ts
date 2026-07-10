@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import {
+  cancelResearchRun,
   planResearch,
   runResearchStream,
   type ResearchStreamEvent,
@@ -433,6 +434,11 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
             event,
             `任务失败：${task.title}${event.error ? `（${event.error}）` : ""}`
           );
+        } else if (status === "cancelled") {
+          trackStreamEvent(
+            event,
+            `任务已取消：${task.title}${event.error ? `（${event.error}）` : ""}`
+          );
         }
         return;
       }
@@ -603,6 +609,12 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
         return;
       }
 
+      case "cancelled": {
+        progressLogs.value.push(event.message.trim() || "研究已取消");
+        trackStreamEvent(event, event.message.trim() || "研究已取消");
+        return;
+      }
+
       case "error": {
         const detail = event.detail.trim() || "研究过程中发生错误";
         error.value = detail;
@@ -627,7 +639,12 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
     currentController = controller;
 
     try {
-      await runResearchStream(payload, processResearchStreamEvent, { signal: controller.signal });
+      await runResearchStream(payload, processResearchStreamEvent, {
+        signal: controller.signal,
+        onRunStarted: (runId) => {
+          currentRunId.value = runId;
+        }
+      });
       if (!reportMarkdown.value) {
         reportMarkdown.value = "暂无生成的报告";
       }
@@ -787,13 +804,25 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
     URL.revokeObjectURL(url);
   }
 
-  function cancelResearch() {
+  async function cancelResearch() {
     if (!loading.value || !currentController) {
       return;
     }
     progressLogs.value.push(
       planning.value ? "正在取消研究规划…" : "正在尝试取消当前研究任务…"
     );
+
+    if (!planning.value && currentRunId.value) {
+      try {
+        const result = await cancelResearchRun(currentRunId.value);
+        if (result.cancelled) {
+          progressLogs.value.push(result.message);
+        }
+      } catch (err) {
+        console.warn("显式取消 API 调用失败，将回退为断开 SSE", err);
+      }
+    }
+
     currentController.abort();
   }
 

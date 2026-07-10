@@ -6,12 +6,13 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from queue import Empty, Queue
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 from typing import Any, Protocol
 
 from config import Configuration
 from models import SummaryState, TodoItem
 from services.browser_fetch import BrowserFetchService
+from services.cancellation import ResearchCancelled, ensure_not_cancelled, is_cancelled
 from services.fact_check_service import FactCheckService
 from services.research_pipeline import ResearchPipelineConfig
 from services.search import dispatch_search, prepare_research_context
@@ -90,16 +91,35 @@ class TaskExecutor:
         *,
         emit_stream: bool,
         step: int | None = None,
+        stop_event: Event | None = None,
     ) -> Iterator[dict[str, Any]]:
         """执行单个任务，并在流式模式下产出 SSE 事件。"""
         task_started_at = self._monotonic_clock()
         task.status = "in_progress"
 
+        if is_cancelled(stop_event):
+            yield from self._cancel_task(
+                task,
+                emit_stream=emit_stream,
+                step=step,
+                task_started_at=task_started_at,
+            )
+            return
+
         try:
             search_result, notices, answer_text, backend = self._run_search_with_timeout(
                 task.query,
                 state.research_loop_count,
+                stop_event=stop_event,
             )
+        except ResearchCancelled:
+            yield from self._cancel_task(
+                task,
+                emit_stream=emit_stream,
+                step=step,
+                task_started_at=task_started_at,
+            )
+            return
         except TimeoutError as exc:
             yield from self._fail_task(
                 state,
@@ -178,7 +198,15 @@ class TaskExecutor:
             state.research_loop_count += 1
 
         if emit_stream:
-            yield from self._run_streaming_summary(state, task, context, backend, step, task_started_at)
+            yield from self._run_streaming_summary(
+                state,
+                task,
+                context,
+                backend,
+                step,
+                task_started_at,
+                stop_event=stop_event,
+            )
         else:
             try:
                 summary_text = self._run_summary_with_timeout(state, task, context)
@@ -259,10 +287,39 @@ class TaskExecutor:
             }
         )
 
+    def _cancel_task(
+        self,
+        task: TodoItem,
+        *,
+        emit_stream: bool,
+        step: int | None,
+        task_started_at: float,
+    ) -> Iterator[dict[str, Any]]:
+        task.status = "cancelled"
+        if not emit_stream:
+            return
+        yield build_stream_event(
+            {
+                "type": "task_status",
+                "task_id": task.id,
+                "status": "cancelled",
+                "error": "任务已取消",
+                "title": task.title,
+                "intent": task.intent,
+                "note_id": task.note_id,
+                "note_path": task.note_path,
+                "step": step,
+                "source": "task_executor",
+                "duration_ms": self._elapsed_ms(task_started_at),
+            }
+        )
+
     def _run_search_with_timeout(
         self,
         query: str,
         loop_count: int,
+        *,
+        stop_event: Event | None = None,
     ) -> tuple[dict[str, Any] | None, list[str], str | None, str]:
         if self._search_backend is not None:
             def run_search() -> tuple[dict[str, Any] | None, list[str], str | None, str]:
@@ -277,12 +334,14 @@ class TaskExecutor:
                 run_search,
                 timeout_seconds=self._config.search_timeout_seconds,
                 operation="搜索",
+                stop_event=stop_event,
             )
 
         return self._call_with_timeout(
             lambda: self._search_dispatcher(query, self._config, loop_count),
             timeout_seconds=self._config.search_timeout_seconds,
             operation="搜索",
+            stop_event=stop_event,
         )
 
     def _run_summary_with_timeout(
@@ -297,13 +356,30 @@ class TaskExecutor:
             operation="总结",
         )
 
-    def _call_with_timeout(self, fn: Callable[[], Any], *, timeout_seconds: int, operation: str) -> Any:
+    def _call_with_timeout(
+        self,
+        fn: Callable[[], Any],
+        *,
+        timeout_seconds: int,
+        operation: str,
+        stop_event: Event | None = None,
+    ) -> Any:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(fn)
+            deadline = self._monotonic_clock() + timeout_seconds
             try:
-                return future.result(timeout=timeout_seconds)
-            except FuturesTimeoutError as exc:
-                raise TimeoutError(f"{operation}超时（{timeout_seconds}s）") from exc
+                while True:
+                    ensure_not_cancelled(stop_event)
+                    remaining = deadline - self._monotonic_clock()
+                    if remaining <= 0:
+                        raise TimeoutError(f"{operation}超时（{timeout_seconds}s）")
+                    try:
+                        return future.result(timeout=min(0.2, remaining))
+                    except FuturesTimeoutError:
+                        continue
+            finally:
+                if is_cancelled(stop_event):
+                    future.cancel()
 
     def _fail_task(
         self,
@@ -354,6 +430,8 @@ class TaskExecutor:
         backend: str,
         step: int | None,
         task_started_at: float,
+        *,
+        stop_event: Event | None = None,
     ) -> Iterator[dict[str, Any]]:
         yield from self._drain_tool_events(state, step=step)
         yield build_stream_event(
@@ -375,7 +453,7 @@ class TaskExecutor:
         summary_stream, summary_getter = self._summarizer.stream_task_summary(state, task, context)
         try:
             yield from self._drain_tool_events(state, step=step)
-            for chunk in self._iter_summary_stream_with_timeout(summary_stream):
+            for chunk in self._iter_summary_stream_with_timeout(summary_stream, stop_event=stop_event):
                 if chunk:
                     yield build_stream_event(
                         {
@@ -389,11 +467,28 @@ class TaskExecutor:
                         }
                     )
                 yield from self._drain_tool_events(state, step=step)
+        except ResearchCancelled:
+            yield from self._cancel_task(
+                task,
+                emit_stream=True,
+                step=step,
+                task_started_at=task_started_at,
+            )
+            return
         except TimeoutError as exc:
             yield from self._fail_task(
                 state,
                 task,
                 error=str(exc),
+                emit_stream=True,
+                step=step,
+                task_started_at=task_started_at,
+            )
+            return
+
+        if is_cancelled(stop_event):
+            yield from self._cancel_task(
+                task,
                 emit_stream=True,
                 step=step,
                 task_started_at=task_started_at,
@@ -420,7 +515,12 @@ class TaskExecutor:
             }
         )
 
-    def _iter_summary_stream_with_timeout(self, summary_stream: Iterator[str]) -> Iterator[str]:
+    def _iter_summary_stream_with_timeout(
+        self,
+        summary_stream: Iterator[str],
+        *,
+        stop_event: Event | None = None,
+    ) -> Iterator[str]:
         chunk_queue: Queue[str | None] = Queue()
         producer_error: list[BaseException] = []
 
@@ -438,14 +538,15 @@ class TaskExecutor:
 
         deadline = self._monotonic_clock() + self._config.summary_timeout_seconds
         while True:
+            ensure_not_cancelled(stop_event)
             remaining = deadline - self._monotonic_clock()
             if remaining <= 0:
                 raise TimeoutError(f"总结超时（{self._config.summary_timeout_seconds}s）")
 
             try:
-                chunk = chunk_queue.get(timeout=remaining)
-            except Empty as exc:
-                raise TimeoutError(f"总结超时（{self._config.summary_timeout_seconds}s）") from exc
+                chunk = chunk_queue.get(timeout=min(0.2, remaining))
+            except Empty:
+                continue
 
             if producer_error:
                 raise producer_error[0]

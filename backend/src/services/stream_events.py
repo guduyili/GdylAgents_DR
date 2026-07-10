@@ -67,7 +67,7 @@ class TaskSummaryChunkEvent(BaseStreamEvent):
 
 class TaskStatusEvent(BaseStreamEvent):
     type: Literal["task_status"] = "task_status"
-    status: Literal["pending", "in_progress", "completed", "skipped", "failed"]
+    status: Literal["pending", "in_progress", "completed", "skipped", "failed", "cancelled"]
     title: str | None = None
     intent: str | None = None
     summary: str | None = None
@@ -138,6 +138,11 @@ class DoneEvent(BaseStreamEvent):
     type: Literal["done"] = "done"
 
 
+class CancelledEvent(BaseStreamEvent):
+    type: Literal["cancelled"] = "cancelled"
+    message: str = "研究已取消"
+
+
 class ErrorEvent(BaseStreamEvent):
     type: Literal["error"] = "error"
     detail: str
@@ -157,6 +162,7 @@ PublicStreamEvent: TypeAlias = (
     | SkillLoadedEvent
     | PhaseDurationEvent
     | DoneEvent
+    | CancelledEvent
     | ErrorEvent
 )
 

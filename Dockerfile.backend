@@ -21,7 +21,7 @@ ENV NOTES_WORKSPACE=/app/src/note
 # Docker 默认启用 SQLite run store，并写入挂载的数据目录
 ENV RUN_STORE_BACKEND=sqlite
 ENV RUN_STORE_DB_PATH=/app/src/data/research_runs.sqlite3
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --extra redis --no-install-project
 
 # 复制源码与 Skill 工作区（与 src/ 同级，运行时 WORKDIR 为 /app/src）
 COPY src/ ./src/

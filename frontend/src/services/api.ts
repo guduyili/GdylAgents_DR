@@ -19,6 +19,8 @@ export type {
   FinalReportEvent,
   ReviewResultEvent,
   DoneEvent,
+  CancelledEvent,
+  CancelResearchRunResponse,
   ErrorEvent,
   StreamBaseEvent,
   TodoTaskEventItem
@@ -31,7 +33,8 @@ import type {
   ResearchStreamEvent,
   ReportDetail,
   ReportItem,
-  StreamOptions
+  StreamOptions,
+  CancelResearchRunResponse
 } from "../types/research";
 import { parseResearchStreamEvent } from "../types/researchSchemas";
 
@@ -53,6 +56,11 @@ export async function runResearchStream(
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
     throw new Error(errorText || `研究请求失败，状态码：${response.status}`);
+  }
+
+  const runIdHeader = response.headers.get("X-Research-Run-Id");
+  if (runIdHeader?.trim()) {
+    options.onRunStarted?.(runIdHeader.trim());
   }
 
   const body = response.body;
@@ -84,7 +92,7 @@ export async function runResearchStream(
             }
             onEvent(event as ResearchStreamEvent);
 
-            if (event.type === "error" || event.type === "done") {
+            if (event.type === "error" || event.type === "done" || event.type === "cancelled") {
               return;
             }
           } catch (error) {
@@ -156,5 +164,16 @@ export async function getResearchRun(runId: string): Promise<ResearchRunSnapshot
   const res = await fetch(`${baseURL}/research/runs/${encodeURIComponent(runId)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`查询研究运行失败，状态码：${res.status}`);
+  return res.json();
+}
+
+export async function cancelResearchRun(runId: string): Promise<CancelResearchRunResponse> {
+  const res = await fetch(`${baseURL}/research/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: "POST"
+  });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "");
+    throw new Error(errorText || `取消研究运行失败，状态码：${res.status}`);
+  }
   return res.json();
 }

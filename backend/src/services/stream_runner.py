@@ -8,10 +8,12 @@ import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from queue import Queue
+from queue import Empty, Queue
+from threading import Event
 from typing import Any, Protocol
 
 from models import SummaryState, TodoItem
+from services.cancellation import is_cancelled
 from services.planner import PlanningService
 from services.reporter import ReportingService
 from services.research_run_store import ResearchRunStore
@@ -87,9 +89,16 @@ class StreamRunner:
         self._pipeline_config = pipeline_config or ResearchPipelineConfig()
         self._report_post_processor = report_post_processor or ReportPostProcessor()
 
-    def run(self, topic: str, todo_items: list[TodoItem] | None = None) -> Iterator[dict[str, Any]]:
+    def run(
+        self,
+        topic: str,
+        todo_items: list[TodoItem] | None = None,
+        *,
+        stop_event: Event | None = None,
+        run_id: str | None = None,
+    ) -> Iterator[dict[str, Any]]:
         """流式执行研究流程，通过 SSE 逐步推送进度事件。"""
-        run_id = self._run_id_factory()
+        run_id = run_id or self._run_id_factory()
         state = SummaryState(research_topic=topic)
         state.run_id = run_id
         setattr(state, "started_at", self._monotonic_clock())
@@ -98,13 +107,15 @@ class StreamRunner:
         if self._run_store is not None:
             self._run_store.start_run(run_id=run_id, topic=topic)
 
-        yield from self._run_flow(state, run_id, todo_items)
+        yield from self._run_flow(state, run_id, todo_items, stop_event=stop_event)
 
     def _run_flow(
         self,
         state: SummaryState,
         run_id: str,
         todo_items: list[TodoItem] | None,
+        *,
+        stop_event: Event | None = None,
     ) -> Iterator[dict[str, Any]]:
         """内部流程：生成事件、记录到 store、yield 到前端。"""
         phase_durations: dict[str, int] = {}
@@ -117,6 +128,10 @@ class StreamRunner:
             run_id=run_id,
         )
 
+        if is_cancelled(stop_event):
+            yield from self._emit_cancelled(state, run_id=run_id, phase_durations=phase_durations)
+            return
+
         if todo_items is not None:
             state.todo_items = todo_items
         elif self._research_mode == "quick":
@@ -126,6 +141,10 @@ class StreamRunner:
             for event in self._drain_tool_events(state, step=0):
                 event.setdefault("source", "tool")
                 yield self._emit(event, run_id=run_id)
+
+        if is_cancelled(stop_event):
+            yield from self._emit_cancelled(state, run_id=run_id, phase_durations=phase_durations)
+            return
 
         if not state.todo_items:
             state.todo_items = [self._planner.create_fallback_task(state=state)]
@@ -154,7 +173,13 @@ class StreamRunner:
             channel_map,
             run_id=run_id,
             phase_durations=phase_durations,
+            stop_event=stop_event,
         )
+
+        if is_cancelled(stop_event):
+            yield from self._emit_cancelled(state, run_id=run_id, phase_durations=phase_durations)
+            return
+
         yield from self._emit_final_report(state, run_id=run_id, phase_durations=phase_durations)
 
         if self._run_store is not None:
@@ -194,6 +219,7 @@ class StreamRunner:
         *,
         run_id: str,
         phase_durations: dict[str, int],
+        stop_event: Event | None = None,
     ) -> Iterator[dict[str, Any]]:
         event_queue: Queue[dict[str, Any]] = Queue()
         task_start_times: dict[int, float] = {}
@@ -254,6 +280,10 @@ class StreamRunner:
         self._set_tool_event_sink(tool_event_sink)
 
         def worker(task: TodoItem, step: int) -> None:
+            if is_cancelled(stop_event):
+                enqueue({"type": "__task_done__", "task_id": task.id})
+                return
+
             task_start_times[task.id] = self._monotonic_clock()
             try:
                 enqueue(
@@ -272,7 +302,13 @@ class StreamRunner:
                     ),
                     task=task,
                 )
-                for event in self._task_executor.execute(state, task, emit_stream=True, step=step):
+                for event in self._task_executor.execute(
+                    state,
+                    task,
+                    emit_stream=True,
+                    step=step,
+                    stop_event=stop_event,
+                ):
                     enqueue(event, task=task)
             except Exception as exc:
                 logger.exception("任务执行失败: run_id=%s task_id=%s", run_id, task.id)
@@ -297,22 +333,35 @@ class StreamRunner:
 
         active_workers = len(state.todo_items)
         finished_workers = 0
-        with ThreadPoolExecutor(max_workers=self._max_concurrent_tasks) as executor:
+        executor = ThreadPoolExecutor(max_workers=self._max_concurrent_tasks)
+        try:
             for task in state.todo_items:
                 step = channel_map.get(task.id, {}).get("step", 0)
                 executor.submit(worker, task, step)
 
             try:
                 while finished_workers < active_workers:
-                    event = event_queue.get()
+                    if is_cancelled(stop_event):
+                        break
+
+                    try:
+                        event = event_queue.get(timeout=0.2)
+                    except Empty:
+                        continue
+
                     if event.get("type") == "__task_done__":
                         finished_workers += 1
-                        self._drain_public_events(event_queue, pending=event_queue.qsize())
+                        yield from self._drain_public_events(
+                            event_queue,
+                            pending=event_queue.qsize(),
+                        )
                         continue
                     yield event
             finally:
                 self._set_tool_event_sink(None)
                 yield from self._drain_public_events(event_queue)
+        finally:
+            executor.shutdown(wait=not is_cancelled(stop_event), cancel_futures=is_cancelled(stop_event))
 
         phase_durations["search"] = phase_search_ms
         phase_durations["summary"] = phase_summary_ms
@@ -429,6 +478,42 @@ class StreamRunner:
             if event.get("type") == "__task_done__":
                 continue
             yield event
+
+    def _emit_cancelled(
+        self,
+        state: SummaryState,
+        *,
+        run_id: str,
+        phase_durations: dict[str, int],
+    ) -> Iterator[dict[str, Any]]:
+        run_started_at = getattr(state, "started_at", self._monotonic_clock())
+        total_duration_ms = self._elapsed_ms(run_started_at)
+        phase_durations["total"] = total_duration_ms
+
+        yield self._emit(
+            build_stream_event(
+                {
+                    "type": "status",
+                    "message": "研究已取消",
+                    "source": "stream_runner",
+                }
+            ),
+            run_id=run_id,
+        )
+        yield self._emit(
+            build_stream_event(
+                {
+                    "type": "cancelled",
+                    "message": "研究已取消",
+                    "source": "stream_runner",
+                    "duration_ms": total_duration_ms,
+                }
+            ),
+            run_id=run_id,
+        )
+
+        if self._run_store is not None:
+            self._run_store.cancel_run(run_id, phase_durations=phase_durations)
 
     def _emit_phase_duration(
         self,

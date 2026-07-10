@@ -42,8 +42,12 @@ GdylAgents_DR 是一个基于 FastAPI、Vue 3 和 HelloAgents 的深度研究助
 │       ├── services/api.ts
 │       └── types/research.ts
 └── docs/
+    ├── beginner_agent_guide.md    # Agent 初学者入门指南（从零开始，推荐先读）
     ├── project.md                 # 架构与前后端调用链概览
-    ├── learning.md                # 初学者优化与学习建议
+    ├── agent_learning_roadmap.md  # Agent 知识学习与扩展路线图（项目视角）
+    ├── learning.md                # 项目内具体练习与 8 周动手计划
+    ├── cancellation.md            # 取消链路与 Redis 多 worker 广播
+    ├── run_store.md               # 研究运行时间线存储
     ├── topic_call_chain.md        # 用户输入 topic 后的完整 Agent 调用链
     └── tool_call_event.md         # 工具调用事件记录链路
 ```
@@ -141,10 +145,14 @@ npm run build
 ```text
 GET  /healthz
 POST /research/plan
-POST /research/stream
+POST /research/stream          # 响应头 X-Research-Run-Id
+POST /research/runs/{run_id}/cancel
+GET  /research/runs/{run_id}
 GET  /notes/reports
 GET  /notes/reports/{note_id}
 ```
+
+研究任务取消链路（SSE 断开 + 显式 cancel API）详见 [docs/cancellation.md](docs/cancellation.md)。
 
 ## Docker Compose 部署
 
@@ -207,12 +215,16 @@ npm run build
 
 当前仓库的架构已从 demo 阶段进化到工程阶段：`DeepResearchAgent` 只做编排门面，`services/*` 承载全部业务，SSE 事件有强类型契约和 `run_id` 级可观测性，前端已拆出 Trace/Timeline 等组件。
 
-**详细的学习路线、代码阅读路径、具体练习和最小可验证交付，请参阅 [docs/learning.md](docs/learning.md)**，该文档基于当前仓库实际代码持续更新。
+**学习文档分层**：
 
-推荐优先级：
+| 文档 | 适合场景 |
+|------|----------|
+| [docs/beginner_agent_guide.md](docs/beginner_agent_guide.md) | **Agent 初学者先读**：概念心智模型、6 周入门路径、自检清单、文档阅读顺序 |
+| [docs/topic_call_chain.md](docs/topic_call_chain.md) | 跑通系统后：用户输入 topic 后的完整调用链 |
+| [docs/learning.md](docs/learning.md) | 已懂主链路：项目内具体练习、代码阅读路径、最小可验证交付 |
+| [docs/agent_learning_roadmap.md](docs/agent_learning_roadmap.md) | 进阶：编排、RAG、MCP、多 Agent、平台化等方向与 12 周路径 |
+| [docs/cancellation.md](docs/cancellation.md) | 长任务取消链路与 Redis 多 worker 部署 |
 
-1. 可靠性：并发限制、搜索/总结超时、搜索 fallback
-2. 协议收紧：所有事件走 `normalize_stream_event()`、前端 zod 校验
-3. 可观测性：阶段耗时事件、Trace 过滤/导出、工具调用预览
-4. 能力扩展：轻量模式、搜索后端 Protocol、报告后处理
-5. 测试：核心路径单测、Agent 评估体系
+当前仓库已进入工程阶段（并发控制、取消广播、fact_check/review、evals、Skill 等均已落地）。  
+**初学者**：按 beginner guide 阶段 0～3 打底 → 再选一条进阶线。  
+**已熟悉本仓库**：下一步建议优先 **RAG 历史报告检索** 或 **任务队列解耦 HTTP**，详见 roadmap 阶段 B/C。

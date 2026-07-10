@@ -70,7 +70,7 @@ export interface TaskSummaryChunkEvent extends StreamBaseEvent {
 
 export interface TaskStatusEvent extends StreamBaseEvent {
   type: "task_status";
-  status: "pending" | "in_progress" | "completed" | "skipped" | "failed";
+  status: "pending" | "in_progress" | "completed" | "skipped" | "failed" | "cancelled";
   title?: string | null;
   intent?: string | null;
   summary?: string | null;
@@ -141,6 +141,11 @@ export interface DoneEvent extends StreamBaseEvent {
   type: "done";
 }
 
+export interface CancelledEvent extends StreamBaseEvent {
+  type: "cancelled";
+  message: string;
+}
+
 export interface ErrorEvent extends StreamBaseEvent {
   type: "error";
   detail: string;
@@ -160,10 +165,19 @@ export type ResearchStreamEvent =
   | SkillLoadedEvent
   | PhaseDurationEvent
   | DoneEvent
+  | CancelledEvent
   | ErrorEvent;
+
+export interface CancelResearchRunResponse {
+  run_id: string;
+  cancelled: boolean;
+  status: string;
+  message: string;
+}
 
 export interface StreamOptions {
   signal?: AbortSignal;
+  onRunStarted?: (runId: string) => void;
 }
 
 export interface ReportItem {

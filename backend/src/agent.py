@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from threading import Event
 from typing import Any, Iterator
 
 from config import Configuration
@@ -57,9 +58,21 @@ class DeepResearchAgent:
         """同步执行完整研究流程，返回最终报告。"""
         return self.services.sync_runner.run(topic, todo_items=todo_items)
 
-    def run_stream(self, topic: str, todo_items: list[TodoItem] | None = None) -> Iterator[dict[str, Any]]:
+    def run_stream(
+        self,
+        topic: str,
+        todo_items: list[TodoItem] | None = None,
+        *,
+        stop_event: Event | None = None,
+        run_id: str | None = None,
+    ) -> Iterator[dict[str, Any]]:
         """流式执行研究流程，通过 SSE 逐步推送进度事件。"""
-        yield from self.services.stream_runner.run(topic, todo_items=todo_items)
+        yield from self.services.stream_runner.run(
+            topic,
+            todo_items=todo_items,
+            stop_event=stop_event,
+            run_id=run_id,
+        )
 
 
 def run_deep_research(topic: str, config: Configuration | None = None) -> SummaryStateOutput:

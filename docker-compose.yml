@@ -1,5 +1,18 @@
 services:
 
+  redis:
+    image: redis:7-alpine
+    container_name: deepresearch_redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -22,10 +35,16 @@ services:
       SEARCH_TIMEOUT_SECONDS: "60"
       SUMMARY_TIMEOUT_SECONDS: "120"
       SEARCH_FALLBACK_CHAIN: duckduckgo,tavily
+      CANCEL_BROADCAST_BACKEND: redis
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CANCEL_CHANNEL: research:runs:cancel
     volumes:
       - notes_data:/app/src/note
       - run_store_data:/app/src/data
       - ./backend/skills:/app/src/skills:ro
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - internal
     # 不对外暴露端口，仅通过 nginx 反代访问

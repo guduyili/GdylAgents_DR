@@ -3,6 +3,7 @@ const TASK_STATUS_LABEL: Record<string, string> = {
   in_progress: "进行中",
   completed: "已完成",
   skipped: "已跳过",
+  cancelled: "已取消",
   failed: "失败"
 };
 

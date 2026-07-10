@@ -55,7 +55,7 @@ export const taskSummaryChunkEventSchema = streamBaseSchema.extend({
 
 export const taskStatusEventSchema = streamBaseSchema.extend({
   type: z.literal("task_status"),
-  status: z.enum(["pending", "in_progress", "completed", "skipped", "failed"]),
+  status: z.enum(["pending", "in_progress", "completed", "skipped", "failed", "cancelled"]),
   title: z.string().nullable().optional(),
   intent: z.string().nullable().optional(),
   summary: z.string().nullable().optional(),
@@ -129,6 +129,11 @@ export const doneEventSchema = streamBaseSchema.extend({
   type: z.literal("done")
 });
 
+export const cancelledEventSchema = streamBaseSchema.extend({
+  type: z.literal("cancelled"),
+  message: z.string()
+});
+
 export const errorEventSchema = streamBaseSchema.extend({
   type: z.literal("error"),
   detail: z.string()
@@ -148,6 +153,7 @@ export const researchStreamEventSchema = z.discriminatedUnion("type", [
   skillLoadedEventSchema,
   phaseDurationEventSchema,
   doneEventSchema,
+  cancelledEventSchema,
   errorEventSchema
 ]);
 

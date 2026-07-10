@@ -168,6 +168,19 @@ def test_build_stream_event_validates_partial_payload_without_observability_fiel
         },
         {"type": "phase_duration", "phase": "search", "duration_ms": 1200, "source": "stream_runner"},
         {"type": "done", "source": "stream_runner"},
+        {
+            "type": "cancelled",
+            "message": "研究已取消",
+            "source": "stream_runner",
+        },
+        {
+            "type": "task_status",
+            "task_id": 2,
+            "status": "cancelled",
+            "title": "任务二",
+            "error": "任务已取消",
+            "source": "task_executor",
+        },
         {"type": "error", "detail": "失败原因"},
     ],
 )

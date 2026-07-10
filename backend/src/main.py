@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from pathlib import Path
+from threading import Event
 from typing import Any, Dict, Iterator, Literal, Optional
 
 from dotenv import load_dotenv
@@ -24,6 +26,7 @@ from config import Configuration, SearchAPI
 from agent import DeepResearchAgent
 from models import TodoItem
 from services.research_run_store import InMemoryResearchRunStore, ResearchRunStore, SQLiteResearchRunStore
+from services.run_cancellation_registry import RunCancellationRegistry, create_run_cancellation_registry
 from services.research_services_factory import create_research_services
 
 
@@ -72,6 +75,15 @@ class ResearchPlanResponse(BaseModel):
 
     topic: str = Field(..., description="研究主题")
     todo_items: list[dict[str, Any]] = Field(default_factory=list, description="规划任务列表")
+
+
+class CancelResearchRunResponse(BaseModel):
+    """取消研究运行的响应体。"""
+
+    run_id: str = Field(..., description="研究运行 ID")
+    cancelled: bool = Field(..., description="是否成功触发取消信号")
+    status: str = Field(..., description="当前或预期运行状态")
+    message: str = Field(..., description="人类可读说明")
 
 
 class ResearchResponse(BaseModel):
@@ -227,7 +239,13 @@ def _create_run_store_from_config(config: Configuration) -> ResearchRunStore:
 def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用实例。"""
     app = FastAPI(title="HelloAgents Deep Researcher")
-    app.state.run_store = _create_run_store_from_config(Configuration.from_env())
+    config = Configuration.from_env()
+    app.state.run_store = _create_run_store_from_config(config)
+    app.state.run_cancellation_registry = create_run_cancellation_registry(
+        backend=config.cancel_broadcast_backend,
+        redis_url=config.redis_url,
+        redis_cancel_channel=config.redis_cancel_channel,
+    )
 
     # 允许前端跨域访问（开发环境使用 *，生产环境应收紧 origins）
     app.add_middleware(
@@ -242,6 +260,8 @@ def create_app() -> FastAPI:
     def log_startup_configuration() -> None:
         """服务启动时打印当前配置，方便排查环境问题。"""
         config = Configuration.from_env()
+        registry: RunCancellationRegistry = app.state.run_cancellation_registry
+        registry.start()
 
         if config.llm_provider == "ollama":
             base_url = config.sanitized_ollama_url()
@@ -252,7 +272,8 @@ def create_app() -> FastAPI:
 
         logger.info(
             "配置加载完成: provider=%s model=%s base_url=%s search_api=%s "
-            "max_loops=%s fetch_full_page=%s tool_calling=%s strip_thinking=%s api_key=%s",
+            "max_loops=%s fetch_full_page=%s tool_calling=%s strip_thinking=%s api_key=%s "
+            "cancel_broadcast=%s redis_url=%s",
             config.llm_provider,
             config.resolved_model() or "unset",
             base_url,
@@ -262,7 +283,15 @@ def create_app() -> FastAPI:
             config.use_tool_calling,
             config.strip_thinking_tokens,
             _mask_secret(config.llm_api_key),
+            config.cancel_broadcast_backend,
+            config.redis_url or "unset",
         )
+
+    @app.on_event("shutdown")
+    def stop_cancellation_registry() -> None:
+        """停止取消广播监听线程（Redis 模式）。"""
+        registry: RunCancellationRegistry = app.state.run_cancellation_registry
+        registry.stop()
 
     @app.get("/healthz")
     def health_check() -> Dict[str, str]:
@@ -337,15 +366,33 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        run_id = uuid.uuid4().hex
+        stop_event = Event()
+        registry: RunCancellationRegistry = app.state.run_cancellation_registry
+        registry.register(run_id, stop_event)
+
         def event_iterator() -> Iterator[str]:
             """将 Agent 的事件字典序列化为 SSE 格式字符串逐条推送。"""
+            stream = agent.run_stream(
+                payload.topic,
+                todo_items=todo_items,
+                stop_event=stop_event,
+                run_id=run_id,
+            )
             try:
-                for event in agent.run_stream(payload.topic, todo_items=todo_items):
+                for event in stream:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            except GeneratorExit:
+                stop_event.set()
+                logger.info("客户端断开研究流，已请求取消后台任务: run_id=%s", run_id)
+                raise
             except Exception as exc:
                 logger.exception("流式研究执行失败")
                 error_payload = {"type": "error", "detail": str(exc)}
                 yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
+            finally:
+                stop_event.set()
+                registry.unregister(run_id)
 
         return StreamingResponse(
             event_iterator(),
@@ -353,6 +400,7 @@ def create_app() -> FastAPI:
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
+                "X-Research-Run-Id": run_id,
             },
         )
 
@@ -368,6 +416,50 @@ def create_app() -> FastAPI:
         if snapshot is None:
             raise HTTPException(status_code=404, detail=f"研究运行 {run_id} 不存在")
         return snapshot
+
+    @app.post("/research/runs/{run_id}/cancel", response_model=CancelResearchRunResponse)
+    def cancel_research_run(run_id: str) -> CancelResearchRunResponse:
+        """显式取消仍在执行的研究运行（不依赖 SSE 连接断开）。"""
+        snapshot = app.state.run_store.get_run(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail=f"研究运行 {run_id} 不存在")
+
+        status = str(snapshot.get("status", "unknown"))
+        if status != "running":
+            return CancelResearchRunResponse(
+                run_id=run_id,
+                cancelled=False,
+                status=status,
+                message=f"运行已结束，当前状态为 {status}",
+            )
+
+        registry: RunCancellationRegistry = app.state.run_cancellation_registry
+        result = registry.request_cancel(run_id)
+        if not result.acknowledged:
+            return CancelResearchRunResponse(
+                run_id=run_id,
+                cancelled=False,
+                status=status,
+                message="运行状态为 running，但未找到活跃执行上下文（可能已结束或运行于其他进程）",
+            )
+
+        if result.local_cancelled:
+            message = "已发送取消信号，后台任务将尽快停止"
+        else:
+            message = "已广播取消信号，持有该运行的 worker 将尽快停止"
+
+        logger.info(
+            "收到显式取消请求: run_id=%s local=%s broadcast=%s",
+            run_id,
+            result.local_cancelled,
+            result.broadcast_sent,
+        )
+        return CancelResearchRunResponse(
+            run_id=run_id,
+            cancelled=True,
+            status="cancelling",
+            message=message,
+        )
 
     @app.get("/notes/reports")
     def list_reports() -> list[dict]:

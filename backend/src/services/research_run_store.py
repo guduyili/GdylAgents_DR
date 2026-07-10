@@ -15,6 +15,7 @@ class ResearchRunStore(Protocol):
     def start_run(self, *, run_id: str, topic: str) -> None: ...
     def record_event(self, run_id: str, event: dict[str, Any]) -> None: ...
     def complete_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None: ...
+    def cancel_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None: ...
     def get_run(self, run_id: str) -> dict[str, Any] | None: ...
 
 
@@ -47,6 +48,14 @@ class InMemoryResearchRunStore:
             run = self._runs.get(run_id)
             if run is not None:
                 run["status"] = "completed"
+                if phase_durations is not None:
+                    run["phase_durations"] = dict(phase_durations)
+
+    def cancel_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None:
+        with self._lock:
+            run = self._runs.get(run_id)
+            if run is not None:
+                run["status"] = "cancelled"
                 if phase_durations is not None:
                     run["phase_durations"] = dict(phase_durations)
 
@@ -114,6 +123,22 @@ class SQLiteResearchRunStore:
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE research_runs SET status = 'completed' WHERE run_id = ?",
+                (run_id,),
+            )
+            if phase_durations is not None:
+                conn.execute(
+                    """
+                    UPDATE research_runs
+                    SET phase_durations_json = ?
+                    WHERE run_id = ?
+                    """,
+                    (json.dumps(phase_durations, ensure_ascii=False), run_id),
+                )
+
+    def cancel_run(self, run_id: str, *, phase_durations: dict[str, int] | None = None) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE research_runs SET status = 'cancelled' WHERE run_id = ?",
                 (run_id,),
             )
             if phase_durations is not None:

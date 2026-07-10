@@ -24,6 +24,22 @@ def test_in_memory_research_run_store_returns_run_timeline() -> None:
     }
 
 
+def test_in_memory_research_run_store_cancel_run() -> None:
+    store = InMemoryResearchRunStore()
+    store.start_run(run_id="run-001", topic="AI Agent")
+    store.cancel_run("run-001", phase_durations={"total": 12})
+
+    snapshot = store.get_run("run-001")
+
+    assert snapshot == {
+        "run_id": "run-001",
+        "topic": "AI Agent",
+        "status": "cancelled",
+        "phase_durations": {"total": 12},
+        "events": [],
+    }
+
+
 def test_in_memory_research_run_store_returns_none_for_missing_run() -> None:
     store = InMemoryResearchRunStore()
 

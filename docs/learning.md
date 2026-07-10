@@ -2,6 +2,9 @@
 
 本文基于**当前仓库实际代码**整理，面向已经理解项目主链路的 agent learner，提供由浅入深的学习、动手和扩展方向。
 
+> **还是 Agent 零基础？** 请先读 [beginner_agent_guide.md](./beginner_agent_guide.md)（概念心智、6 周入门、文档阅读顺序）。  
+> **想从整个 Agent 项目视角规划后续学习？** 请参阅 [agent_learning_roadmap.md](./agent_learning_roadmap.md)（能力地图、学习方法论、RAG/MCP/多 Agent/平台化等方向与 12 周路径）。
+
 ---
 
 ## 1. 项目当前定位与架构快照
@@ -415,7 +418,19 @@ research_run_store.py → report_persistence.py → notes.py → main.py (report
 
 ---
 
-## 7. 每个扩展方向的"最小可验证交付"
+## 7. 取消链路（已实现，建议优先阅读）
+
+长任务 Agent 必须区分 **HTTP 流结束** 与 **后台执行结束**。本项目已实现：
+
+- `stop_event` 贯穿 `main.py` → `StreamRunner` → `TaskExecutor`
+- `POST /research/runs/{run_id}/cancel` 显式取消
+- `run_store.status = cancelled` 与 `cancelled` SSE 事件
+
+**学习文档**：[cancellation.md](./cancellation.md)（含 3 天练习、验证命令、多进程扩展思路）
+
+---
+
+## 8. 每个扩展方向的"最小可验证交付"
 
 | 方向 | 最小交付 | 如何验证 |
 |:--|:--|:--|
@@ -426,9 +441,10 @@ research_run_store.py → report_persistence.py → notes.py → main.py (report
 | PhaseDurationEvent | 后端 yield 新事件 + 前端显示耗时 | 前端 Timeline 出现"搜索: 3.2s / 总结: 8.1s"的行 |
 | 轻量模式 | `POST /research/stream` body 带 `mode: quick` | 前端选择 quick 后只做一次搜索总结 |
 | 评审模式 | `ReviewService` + `review_result` 事件 | 报告下方显示"评审意见: 缺少参考来源"的卡片 |
+| 取消链路 | `stop_event` + cancel API | 取消后无 `done`，`GET /research/runs/{id}` 为 `cancelled` |
 
 ---
 
-## 8. 一句话总结
+## 9. 一句话总结
 
 如果你是一个已经理解现有项目的基础 learner，下一步不是重写，而是按 **主链路加固 → 协议收紧 → 可观测性补齐 → 可靠性工程 → 新能力适配器** 的顺序，每一步都带测试和验证，逐步从一个"能跑的 demo"升级为"可以放心扩展的工程"。

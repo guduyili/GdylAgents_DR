@@ -33,6 +33,7 @@ from services.task_serializer import serialize_task
 from services.tool_event_bridge import ToolEventBridge
 from services.tool_events import ToolCallTracker
 from services.tool_registry_factory import create_tooling
+from services.report_rag import create_report_retriever_from_config
 
 
 @dataclass
@@ -112,9 +113,11 @@ def create_research_services(
     report_agent = research_pipeline.reporter_agent
 
     planner = PlanningService(todo_agent, config)
+    report_retriever = create_report_retriever_from_config(config)
     plan_runner = PlanRunner(
         planner=planner,
         drain_tool_events=tool_event_bridge.drain,
+        report_retriever=report_retriever,
     )
     summarizer = SummarizationService(summarizer_factory, config=config)
     reporting = ReportingService(report_agent, config)
@@ -142,6 +145,7 @@ def create_research_services(
         drain_tool_events=tool_event_bridge.drain,
         persist_final_report=report_persistence.persist_final_report,
         research_mode=config.research_mode,
+        report_retriever=report_retriever,
     )
     stream_runner = StreamRunner(
         planner=planner,
@@ -158,6 +162,7 @@ def create_research_services(
         enable_report_review=config.enable_report_review,
         pipeline_config=pipeline_config,
         report_post_processor=report_post_processor,
+        report_retriever=report_retriever,
     )
 
     return ResearchServices(

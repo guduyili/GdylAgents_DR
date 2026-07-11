@@ -43,6 +43,7 @@ GdylAgents_DR 是一个基于 FastAPI、Vue 3 和 HelloAgents 的深度研究助
 │       └── types/research.ts
 └── docs/
     ├── beginner_agent_guide.md    # Agent 初学者入门指南（从零开始，推荐先读）
+    ├── rag_learning_path.md       # RAG 进阶学习与实现路径（历史报告检索）
     ├── project.md                 # 架构与前后端调用链概览
     ├── agent_learning_roadmap.md  # Agent 知识学习与扩展路线图（项目视角）
     ├── learning.md                # 项目内具体练习与 8 周动手计划
@@ -220,11 +221,12 @@ npm run build
 | 文档 | 适合场景 |
 |------|----------|
 | [docs/beginner_agent_guide.md](docs/beginner_agent_guide.md) | **Agent 初学者先读**：概念心智模型、6 周入门路径、自检清单、文档阅读顺序 |
+| [docs/rag_learning_path.md](docs/rag_learning_path.md) | **RAG 进阶主线**：历史报告检索、4 周实现、Phase1 骨架用法 |
 | [docs/topic_call_chain.md](docs/topic_call_chain.md) | 跑通系统后：用户输入 topic 后的完整调用链 |
 | [docs/learning.md](docs/learning.md) | 已懂主链路：项目内具体练习、代码阅读路径、最小可验证交付 |
-| [docs/agent_learning_roadmap.md](docs/agent_learning_roadmap.md) | 进阶：编排、RAG、MCP、多 Agent、平台化等方向与 12 周路径 |
+| [docs/agent_learning_roadmap.md](docs/agent_learning_roadmap.md) | 进阶全景：编排、RAG、MCP、多 Agent、平台化 |
 | [docs/cancellation.md](docs/cancellation.md) | 长任务取消链路与 Redis 多 worker 部署 |
 
 当前仓库已进入工程阶段（并发控制、取消广播、fact_check/review、evals、Skill 等均已落地）。  
 **初学者**：按 beginner guide 阶段 0～3 打底 → 再选一条进阶线。  
-**已熟悉本仓库**：下一步建议优先 **RAG 历史报告检索** 或 **任务队列解耦 HTTP**，详见 roadmap 阶段 B/C。
+**RAG 进阶**：见 [docs/rag_learning_path.md](docs/rag_learning_path.md)；Phase1 词项检索已接入（`ENABLE_REPORT_RAG=true`）。

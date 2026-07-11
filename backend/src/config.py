@@ -176,6 +176,35 @@ class Configuration(BaseModel):
         title="Redis 取消频道",
         description="发布/订阅取消 run_id 的 Redis channel 名称",
     )
+    enable_report_rag: bool = Field(
+        default=False,
+        title="启用历史报告 RAG",
+        description="规划前从 NOTES_WORKSPACE 检索相关历史报告片段并注入 Prompt",
+    )
+    rag_top_k: int = Field(
+        default=4,
+        ge=1,
+        title="RAG top-k",
+        description="检索返回的最大片段数",
+    )
+    rag_chunk_size: int = Field(
+        default=500,
+        ge=64,
+        title="RAG 分块大小",
+        description="历史报告按字符切块的目标长度",
+    )
+    rag_chunk_overlap: int = Field(
+        default=80,
+        ge=0,
+        title="RAG 分块重叠",
+        description="相邻 chunk 重叠字符数",
+    )
+    rag_max_context_chars: int = Field(
+        default=3000,
+        ge=200,
+        title="RAG 上下文最大字符",
+        description="注入规划 Prompt 的历史上下文总长度上限",
+    )
 
 
     @classmethod
@@ -223,6 +252,11 @@ class Configuration(BaseModel):
             "cancel_broadcast_backend": os.getenv("CANCEL_BROADCAST_BACKEND"),
             "redis_url": os.getenv("REDIS_URL"),
             "redis_cancel_channel": os.getenv("REDIS_CANCEL_CHANNEL"),
+            "enable_report_rag": os.getenv("ENABLE_REPORT_RAG"),
+            "rag_top_k": os.getenv("RAG_TOP_K"),
+            "rag_chunk_size": os.getenv("RAG_CHUNK_SIZE"),
+            "rag_chunk_overlap": os.getenv("RAG_CHUNK_OVERLAP"),
+            "rag_max_context_chars": os.getenv("RAG_MAX_CONTEXT_CHARS"),
         }
 
         # setdefault：别名不覆盖第一步已读取的值

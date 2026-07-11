@@ -36,6 +36,7 @@ class SummaryState:
     report_note_id: Optional[str] = field(default=None)         # 报告笔记的 ID
     report_note_path: Optional[str] = field(default=None)       # 报告笔记的本地路径
     run_id: Optional[str] = field(default=None)                 # 本次研究流程的唯一标识
+    prior_research_context: Optional[str] = field(default=None)  # RAG 检索到的历史报告上下文
 
 @dataclass(kw_only=True)
 class SummaryStateInput:

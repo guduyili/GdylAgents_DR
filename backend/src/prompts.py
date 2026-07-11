@@ -51,6 +51,15 @@ todo_planner_instructions = """
 研究主题：{research_topic}
 </CONTEXT>
 
+<PRIOR_RESEARCH>
+以下片段来自本地历史研究报告（RAG 检索结果），可能过时或不完整，仅作参考：
+- 优先规划「历史未覆盖或需要更新」的问题；
+- 避免与历史结论简单重复的任务；
+- 若片段与主题无关，请忽略。
+
+{prior_research_context}
+</PRIOR_RESEARCH>
+
 <FORMAT>
 【必须严格遵守】只输出 JSON，不要输出表格、列表、解释或其他格式。
 你的完整回复必须是以下 JSON 格式，不要在 JSON 前后添加任何文字：

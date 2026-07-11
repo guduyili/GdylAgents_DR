@@ -31,9 +31,14 @@ class PlanningService:
     def plan_todo_list(self, state: SummaryState) -> List[TodoItem]:
         """Ask the planner agent to break the topic into actionable tasks."""
 
+        prior = (state.prior_research_context or "").strip()
+        if not prior:
+            prior = "（当前无可用的历史研究片段）"
+
         prompt = todo_planner_instructions.format(
             current_date=get_current_date(),
             research_topic=state.research_topic,
+            prior_research_context=prior,
         )
 
         response = self._agent.run(prompt)

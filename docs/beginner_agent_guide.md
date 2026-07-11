@@ -256,7 +256,7 @@ frontend/src/components/PlanEditor.vue
 
 | 方向 | 适合你如果… | 本项目练手切入点 |
 |------|-------------|------------------|
-| **A. 记忆 / RAG** | 关心「复用历史报告、减少重复搜索」 | 历史 report 向量化 → plan 前检索 |
+| **A. 记忆 / RAG**（推荐优先） | 关心「复用历史报告、减少重复搜索」 | 见 [rag_learning_path.md](./rag_learning_path.md)；`ENABLE_REPORT_RAG=true` |
 | **B. 工具标准化 / MCP** | 关心「工具可插拔、跨项目复用」 | 用 MCP 包装搜索，TaskExecutor 走 MCP |
 | **C. 平台化运行** | 关心「关浏览器任务仍跑、多用户」 | 任务队列 + job_id 查询 |
 | **D. 多 Agent 协作** | 关心「角色动态派工、辩论评审」 | Supervisor / 双评审 |

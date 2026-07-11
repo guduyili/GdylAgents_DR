@@ -219,14 +219,18 @@ tool_call_event.md → tool_events.py → MCP 官方 quickstart → 写一个最
 | 结构化记忆 | 事实表、实体关系 | fact_check 结果写入 `entities` 表，报告引用时校验 |
 | 上下文压缩 | 长报告超出 token 窗口 | 总结阶段对 search results 做 map-reduce 压缩 |
 
+**专题文档（已选 RAG 请以此为准）**：[rag_learning_path.md](./rag_learning_path.md)
+
+**仓库现状**：Phase1 词项 RAG 已落地（`services/report_rag.py`，`ENABLE_REPORT_RAG`）。
+
 **外部对照**：LlamaIndex、LangChain RAG tutorial、Mem0、GraphRAG。
 
 **学习路径**：
 
 ```text
-Week 1: 读本项目 summarizer 如何拼 context
-Week 2: 本地 Chroma/FAISS 存历史 report chunk
-Week 3: plan 阶段注入 top-k 相似片段
+Week 1: 读 report_rag.py + 开启 ENABLE_REPORT_RAG，验证规划注入
+Week 2: 可观测（rag status / 专用事件）+ Prompt 约束
+Week 3: Embedding 后端替换 LexicalReportRetriever
 Week 4: eval 对比「有/无 RAG」的报告质量
 ```
 
@@ -444,6 +448,7 @@ run_store.md → tool_call_event.md → backend/evals/run_eval.py → DeepEval �
 | 文档 | 内容 | 对应 Agent 知识 |
 |------|------|-----------------|
 | [beginner_agent_guide.md](./beginner_agent_guide.md) | 零基础入门与 6 周路径 | 概念建立 |
+| [rag_learning_path.md](./rag_learning_path.md) | RAG 专题 4 周路径 + Phase1 骨架 | 记忆与检索 |
 | [project.md](./project.md) | 架构与调用链 | 编排入门 |
 | [topic_call_chain.md](./topic_call_chain.md) | topic 提交后的 Agent 链路 | 端到端 trace |
 | [tool_call_event.md](./tool_call_event.md) | 工具调用事件 | Tool Use |

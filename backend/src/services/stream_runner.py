@@ -70,6 +70,7 @@ class StreamRunner:
         enable_report_review: bool = True,
         pipeline_config: ResearchPipelineConfig | None = None,
         report_post_processor: ReportPostProcessor | None = None,
+        report_retriever: Any | None = None,
     ) -> None:
         self._planner = planner
         self._task_executor = task_executor
@@ -88,6 +89,7 @@ class StreamRunner:
         self._enable_report_review = enable_report_review
         self._pipeline_config = pipeline_config or ResearchPipelineConfig()
         self._report_post_processor = report_post_processor or ReportPostProcessor()
+        self._report_retriever = report_retriever
 
     def run(
         self,
@@ -137,6 +139,7 @@ class StreamRunner:
         elif self._research_mode == "quick":
             state.todo_items = [self._build_quick_task(state)]
         else:
+            yield from self._emit_rag_context(state, run_id=run_id)
             state.todo_items = self._planner.plan_todo_list(state)
             for event in self._drain_tool_events(state, step=0):
                 event.setdefault("source", "tool")
@@ -408,6 +411,13 @@ class StreamRunner:
             note_event.setdefault("source", "report_persistence")
             note_event.setdefault("duration_ms", self._elapsed_ms(report_started_at))
             yield self._emit(note_event, run_id=run_id)
+            # 新报告落盘后使 RAG 索引失效，下次规划可检索到最新内容
+            invalidate = getattr(self._report_retriever, "invalidate", None)
+            if callable(invalidate):
+                try:
+                    invalidate()
+                except Exception:
+                    logger.exception("RAG 索引 invalidate 失败 run_id=%s", run_id)
 
         yield self._emit(
             build_stream_event(
@@ -458,6 +468,64 @@ class StreamRunner:
                     "type": "done",
                     "source": "stream_runner",
                     "duration_ms": total_duration_ms,
+                }
+            ),
+            run_id=run_id,
+        )
+
+    def _emit_rag_context(
+        self,
+        state: SummaryState,
+        *,
+        run_id: str,
+    ) -> Iterator[dict[str, Any]]:
+        """规划前检索历史报告，写入 state 并推送 status 事件。"""
+        if self._report_retriever is None:
+            return
+
+        try:
+            hits = self._report_retriever.retrieve(state.research_topic)
+            context = self._report_retriever.format_context(hits)
+            state.prior_research_context = context or None
+        except Exception:
+            logger.exception("StreamRunner RAG 检索失败 run_id=%s", run_id)
+            state.prior_research_context = None
+            yield self._emit(
+                build_stream_event(
+                    {
+                        "type": "status",
+                        "message": "历史报告检索失败，将不使用 RAG 上下文",
+                        "source": "report_rag",
+                        "step": 0,
+                    }
+                ),
+                run_id=run_id,
+            )
+            return
+
+        if not hits:
+            yield self._emit(
+                build_stream_event(
+                    {
+                        "type": "status",
+                        "message": "未命中历史报告片段，规划将不注入 RAG 上下文",
+                        "source": "report_rag",
+                        "step": 0,
+                    }
+                ),
+                run_id=run_id,
+            )
+            return
+
+        note_ids = sorted({getattr(h, "note_id", "") for h in hits if getattr(h, "note_id", None)})
+        preview = "、".join(note_ids[:5]) if note_ids else "未知"
+        yield self._emit(
+            build_stream_event(
+                {
+                    "type": "status",
+                    "message": f"已从历史报告检索到 {len(hits)} 条相关片段（note: {preview}）",
+                    "source": "report_rag",
+                    "step": 0,
                 }
             ),
             run_id=run_id,

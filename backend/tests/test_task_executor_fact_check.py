@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from threading import Lock
 
+import pytest
+
 from config import Configuration, SearchAPI
 from models import SummaryState, TodoItem
 from services.research_pipeline import ResearchPipelineConfig
@@ -12,12 +14,19 @@ from services.task_executor import TaskExecutor
 class StreamSummarizer:
     def stream_task_summary(self, state: SummaryState, task: TodoItem, context: str):
         def chunks():
-            yield "AI Agent 架构持续演进。"
+            yield "Planning / retrieval / evidence / verification — 2026."
 
-        return chunks(), lambda: "AI Agent 架构持续演进，包含多模态能力突破。"
+        return chunks(), lambda: "Planning / retrieval / evidence / verification — 2026."
 
 
-def test_execute_stream_emits_skill_loaded_and_fact_check_events(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("source_text", "expected_passed"),
+    [("Planning retrieval evidence verification", True), ("Coastal tides change daily.", False)],
+    ids=["supported-source", "unrelated-source"],
+)
+def test_execute_stream_emits_skill_loaded_and_fact_check_events(
+    tmp_path, source_text: str, expected_passed: bool
+) -> None:
     skill_dir = tmp_path / "deep-research"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
@@ -54,8 +63,8 @@ def test_execute_stream_emits_skill_loaded_and_fact_check_events(tmp_path) -> No
             "duckduckgo",
         ),
         context_preparer=lambda search_result, answer_text, config: (
-            "来源",
-            "AI Agent 架构 https://example.com/agent",
+            f"https://example.com/article\n{source_text}",
+            source_text,
         ),
         skill_loader=SkillLoader(skill_dir),
         pipeline_config=ResearchPipelineConfig.from_csv(
@@ -69,3 +78,10 @@ def test_execute_stream_emits_skill_loaded_and_fact_check_events(tmp_path) -> No
     assert "skill_loaded" in event_types
     assert "fact_check_result" in event_types
     assert event_types.index("fact_check_result") < event_types.index("task_status")
+    fact_check = next(event for event in events if event["type"] == "fact_check_result")
+    assert fact_check["passed"] is expected_passed
+    assert fact_check["warnings"] == []
+    assert fact_check["missing_terms"] == (
+        [] if expected_passed else ["Planning", "retrieval", "evidence", "verification"]
+    )
+    assert task.status == "completed"  # A negative check remains advisory.

@@ -48,7 +48,7 @@ class FactCheckService:
         matched_terms: list[str] = []
         lowered_sources = sources_blob.lower()
         for term in terms:
-            if term.lower() in lowered_sources or term.lower() in summary.lower():
+            if term.lower() in lowered_sources:
                 matched_terms.append(term)
             else:
                 missing_terms.append(term)

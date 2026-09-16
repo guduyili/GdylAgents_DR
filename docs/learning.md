@@ -1,6 +1,8 @@
 # GdylAgents_DR 深度学习与扩展路线
 
-本文基于**当前仓库实际代码**整理，面向已经理解项目主链路的 agent learner，提供由浅入深的学习、动手和扩展方向。
+本文基于编写时的仓库代码整理，面向已经理解项目主链路的 agent learner，提供由浅入深的学习、动手和扩展方向。
+
+> **现状校准（2026-09-15）**：下文部分练习描述早于现有实现，例如并发限制、超时包装、搜索 fallback 和前端运行时事件校验已存在。请将本文作为练习题库，按代码确认是否需要继续扩展；当前能力边界与后续优先级见 [Agent 原理与工程实现进阶计划](agent_deep_dive_plan.md)。
 
 > **还是 Agent 零基础？** 请先读 [beginner_agent_guide.md](./beginner_agent_guide.md)（概念心智、6 周入门、文档阅读顺序）。  
 > **想从整个 Agent 项目视角规划后续学习？** 请参阅 [agent_learning_roadmap.md](./agent_learning_roadmap.md)（能力地图、学习方法论、RAG/MCP/多 Agent/平台化等方向与 12 周路径）。

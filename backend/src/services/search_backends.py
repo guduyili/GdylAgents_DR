@@ -265,8 +265,12 @@ class FallbackSearchBackend:
         primary_backend = self._backends[0]
         notices: list[str] = []
         last_error: Exception | None = None
+        deadline = monotonic() + config.search_timeout_seconds
 
         for index, backend_name in enumerate(self._backends):
+            if monotonic() >= deadline:
+                notices.append("搜索预算耗尽，停止后续后端尝试")
+                break
             backend = create_search_backend(backend_name)
             try:
                 outcome = backend.search(query, config=config, loop_count=loop_count)
@@ -295,7 +299,7 @@ class FallbackSearchBackend:
 
         if last_error is not None:
             logger.error(
-                "所有搜索后端均失败 primary=%s fallbacks=%s error=%s",
+                "搜索结束但未获得结果 primary=%s fallbacks=%s error=%s",
                 primary_backend,
                 self._backends[1:],
                 last_error,

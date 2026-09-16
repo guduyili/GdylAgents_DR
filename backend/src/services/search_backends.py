@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from time import monotonic
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from hello_agents.tools import SearchTool
 
@@ -43,6 +43,20 @@ class SearchBackend(Protocol):
         *,
         config: Configuration,
         loop_count: int,
+    ) -> SearchOutcome: ...
+
+
+@runtime_checkable
+class BudgetedSearchBackend(Protocol):
+    """Optional capability; legacy backends keep the original search contract."""
+
+    def search_with_budget(
+        self,
+        query: str,
+        *,
+        config: Configuration,
+        loop_count: int,
+        timeout_seconds: float,
     ) -> SearchOutcome: ...
 
 
@@ -138,9 +152,25 @@ class DuckDuckGoBackend:
         config: Configuration,
         loop_count: int,
     ) -> SearchOutcome:
+        return self.search_with_budget(
+            query, config=config, loop_count=loop_count,
+            timeout_seconds=config.search_timeout_seconds,
+        )
+
+    def search_with_budget(
+        self,
+        query: str,
+        *,
+        config: Configuration,
+        loop_count: int,
+        timeout_seconds: float,
+    ) -> SearchOutcome:
         del loop_count
         return _normalize_search_response(
-            _ddgs_search(query, max_results=5, timeout_seconds=config.search_timeout_seconds),
+            _ddgs_search(
+                query, max_results=5,
+                timeout_seconds=min(timeout_seconds, config.search_timeout_seconds),
+            ),
             search_api=self.name,
         )
 
@@ -272,8 +302,20 @@ class FallbackSearchBackend:
                 notices.append("搜索预算耗尽，停止后续后端尝试")
                 break
             backend = create_search_backend(backend_name)
+            # Construction also consumes the shared budget. Keep fractional seconds
+            # separate from the validated, potentially shared Configuration object.
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                notices.append("搜索预算耗尽，停止后续后端尝试")
+                break
             try:
-                outcome = backend.search(query, config=config, loop_count=loop_count)
+                if isinstance(backend, BudgetedSearchBackend):
+                    outcome = backend.search_with_budget(
+                        query, config=config, loop_count=loop_count,
+                        timeout_seconds=remaining,
+                    )
+                else:
+                    outcome = backend.search(query, config=config, loop_count=loop_count)
             except Exception as exc:
                 last_error = exc
                 notice = f"搜索后端 {backend_name} 失败: {exc}"

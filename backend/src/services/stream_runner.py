@@ -354,10 +354,7 @@ class StreamRunner:
 
                     if event.get("type") == "__task_done__":
                         finished_workers += 1
-                        yield from self._drain_public_events(
-                            event_queue,
-                            pending=event_queue.qsize(),
-                        )
+                        # Keep consuming here so every completion is counted.
                         continue
                     yield event
             finally:

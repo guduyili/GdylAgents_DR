@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from threading import Lock
+from threading import Event, Lock
 
 from models import SummaryState, TodoItem
 from services.stream_runner import StreamRunner
@@ -15,7 +15,7 @@ class ConcurrentTrackingExecutor:
         self.max_active_workers = 0
         self.calls: list[int] = []
 
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None):
+    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None, stop_event: Event | None = None):
         with self._lock:
             self.active_workers += 1
             self.max_active_workers = max(self.max_active_workers, self.active_workers)

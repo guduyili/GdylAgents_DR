@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from threading import Event
+
 from models import SummaryState, TodoItem
 from services.stream_runner import StreamRunner
 
@@ -13,7 +15,7 @@ class FakePlanner:
 
 
 class FakeTaskExecutor:
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None):
+    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None, stop_event: Event | None = None):
         yield {"type": "tool_call", "event_id": 1, "task_id": task.id, "agent": "A", "tool": "note"}
 
 
@@ -71,6 +73,7 @@ def test_stream_runner_assigns_stable_task_run_id_to_task_events() -> None:
 
     events = list(make_runner().run("AI Agent", todo_items=[task]))
 
+    assert any(event["type"] == "tool_call" for event in events)
     assert task.task_run_id == "run-test-001:task:1"
     todo_event = next(event for event in events if event["type"] == "todo_list")
     assert todo_event["tasks"][0]["task_run_id"] == "run-test-001:task:1"
@@ -85,6 +88,7 @@ def test_stream_runner_records_public_events_to_run_store() -> None:
 
     events = list(make_runner(run_store=store).run("AI Agent", todo_items=[task]))
 
+    assert any(event["type"] == "tool_call" for event in events)
     assert store.started == [{"run_id": "run-test-001", "topic": "AI Agent"}]
     assert store.completed == ["run-test-001"]
     assert [item["event"] for item in store.events] == events

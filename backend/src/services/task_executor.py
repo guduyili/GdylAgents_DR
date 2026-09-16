@@ -364,22 +364,22 @@ class TaskExecutor:
         operation: str,
         stop_event: Event | None = None,
     ) -> Any:
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
             future = executor.submit(fn)
             deadline = self._monotonic_clock() + timeout_seconds
-            try:
-                while True:
-                    ensure_not_cancelled(stop_event)
-                    remaining = deadline - self._monotonic_clock()
-                    if remaining <= 0:
-                        raise TimeoutError(f"{operation}超时（{timeout_seconds}s）")
-                    try:
-                        return future.result(timeout=min(0.2, remaining))
-                    except FuturesTimeoutError:
-                        continue
-            finally:
-                if is_cancelled(stop_event):
-                    future.cancel()
+            while True:
+                ensure_not_cancelled(stop_event)
+                remaining = deadline - self._monotonic_clock()
+                if remaining <= 0:
+                    raise TimeoutError(f"{operation}超时（{timeout_seconds}s）")
+                try:
+                    return future.result(timeout=min(0.2, remaining))
+                except FuturesTimeoutError:
+                    continue
+        finally:
+            # Release the caller on timeout/cancel; running tools must finish themselves.
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _fail_task(
         self,

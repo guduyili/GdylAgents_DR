@@ -189,6 +189,8 @@ Compose 中与本地开发不同的路径/行为（`environment` 会覆盖 `env_
 
 ## 测试
 
+项目协作与版本更新必须遵循 [AGENTS.md](AGENTS.md)。
+
 最小版本更新及逐版测试记录见 [版本迭代索引](docs/releases/README.md)。每版记录改动范围、复现命令、实际测试结果，并使用独立 Git 提交和版本标签管理。
 
 后端测试推荐使用 uv 安装 dev 依赖并运行：

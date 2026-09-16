@@ -54,6 +54,7 @@ class CancellableSearchBackend(Protocol):
     def search_with_cancellation(
         self, query: str, *, config: Configuration, loop_count: int,
         stop_event: StopSignal | None,
+        timeout_seconds: float | None = None,
     ) -> SearchOutcome: ...
 
 
@@ -115,9 +116,11 @@ def _normalize_search_response(
 
 
 def _ddgs_search(
-    query: str, max_results: int = 5, *, timeout_seconds: float = 45
+    query: str, max_results: int = 5, *, timeout_seconds: float = 45,
+    stop_event: StopSignal | None = None,
 ) -> dict[str, Any]:
     """Direct DuckDuckGo search via ddgs with lite/api/html fallback."""
+    ensure_not_cancelled(stop_event)
     try:
         from ddgs import DDGS
     except ImportError:
@@ -128,13 +131,16 @@ def _ddgs_search(
     deadline = monotonic() + timeout_seconds
 
     for backend in ("lite", "api", "html"):
+        ensure_not_cancelled(stop_event)
         remaining = deadline - monotonic()
         if remaining <= 0:
             notices.append("DuckDuckGo 搜索预算耗尽，停止后续尝试")
             break
         try:
             with DDGS(timeout=min(15, remaining)) as client:
+                ensure_not_cancelled(stop_event)
                 raw = list(client.text(query, max_results=max_results, backend=backend))
+            ensure_not_cancelled(stop_event)
             if raw:
                 for entry in raw:
                     url = entry.get("href") or entry.get("url") or ""
@@ -144,7 +150,10 @@ def _ddgs_search(
                         results.append({"title": title, "url": url, "content": content})
                 logger.info("DuckDuckGo 使用 backend=%s 返回 %d 条结果", backend, len(results))
                 break
+        except ResearchCancelled:
+            raise
         except Exception as exc:
+            ensure_not_cancelled(stop_event)
             notices.append(f"DuckDuckGo backend={backend} 失败: {exc}")
             logger.warning("DuckDuckGo backend=%s 失败: %s", backend, exc)
 
@@ -176,11 +185,24 @@ class DuckDuckGoBackend:
         loop_count: int,
         timeout_seconds: float,
     ) -> SearchOutcome:
+        return self.search_with_cancellation(
+            query, config=config, loop_count=loop_count,
+            timeout_seconds=timeout_seconds, stop_event=None,
+        )
+
+    def search_with_cancellation(
+        self, query: str, *, config: Configuration, loop_count: int,
+        stop_event: StopSignal | None,
+        timeout_seconds: float | None = None,
+    ) -> SearchOutcome:
         del loop_count
+        budget = config.search_timeout_seconds if timeout_seconds is None else min(
+            timeout_seconds, config.search_timeout_seconds,
+        )
         return _normalize_search_response(
             _ddgs_search(
                 query, max_results=5,
-                timeout_seconds=min(timeout_seconds, config.search_timeout_seconds),
+                timeout_seconds=budget, stop_event=stop_event,
             ),
             search_api=self.name,
         )
@@ -310,11 +332,15 @@ class FallbackSearchBackend:
     def search_with_cancellation(
         self, query: str, *, config: Configuration, loop_count: int,
         stop_event: StopSignal | None,
+        timeout_seconds: float | None = None,
     ) -> SearchOutcome:
         primary_backend = self._backends[0]
         notices: list[str] = []
         last_error: Exception | None = None
-        deadline = monotonic() + config.search_timeout_seconds
+        budget = config.search_timeout_seconds if timeout_seconds is None else min(
+            timeout_seconds, config.search_timeout_seconds,
+        )
+        deadline = monotonic() + budget
 
         for index, backend_name in enumerate(self._backends):
             ensure_not_cancelled(stop_event)
@@ -330,7 +356,12 @@ class FallbackSearchBackend:
                 notices.append("搜索预算耗尽，停止后续后端尝试")
                 break
             try:
-                if isinstance(backend, BudgetedSearchBackend):
+                if isinstance(backend, CancellableSearchBackend):
+                    outcome = backend.search_with_cancellation(
+                        query, config=config, loop_count=loop_count,
+                        timeout_seconds=remaining, stop_event=stop_event,
+                    )
+                elif isinstance(backend, BudgetedSearchBackend):
                     outcome = backend.search_with_budget(
                         query, config=config, loop_count=loop_count,
                         timeout_seconds=remaining,

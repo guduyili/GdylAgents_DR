@@ -67,7 +67,7 @@ def test_fallback_search_backend_switches_when_primary_raises(monkeypatch) -> No
 def test_duckduckgo_backend_returns_normalized_outcome(monkeypatch) -> None:
     monkeypatch.setattr(
         "services.search_backends._ddgs_search",
-        lambda query, max_results=5, *, timeout_seconds=45: {
+        lambda query, max_results=5, *, timeout_seconds=45, stop_event=None: {
             "results": [{"title": "A", "url": "https://example.com", "content": "body"}],
             "backend": "duckduckgo",
             "answer": None,

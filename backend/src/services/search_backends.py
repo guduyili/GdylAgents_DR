@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any, Optional, Protocol
 
 from hello_agents.tools import SearchTool
@@ -88,7 +89,9 @@ def _normalize_search_response(
     )
 
 
-def _ddgs_search(query: str, max_results: int = 5) -> dict[str, Any]:
+def _ddgs_search(
+    query: str, max_results: int = 5, *, timeout_seconds: float = 45
+) -> dict[str, Any]:
     """Direct DuckDuckGo search via ddgs with lite/api/html fallback."""
     try:
         from ddgs import DDGS
@@ -97,10 +100,15 @@ def _ddgs_search(query: str, max_results: int = 5) -> dict[str, Any]:
 
     results: list[dict[str, str]] = []
     notices: list[str] = []
+    deadline = monotonic() + timeout_seconds
 
     for backend in ("lite", "api", "html"):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            notices.append("DuckDuckGo 搜索预算耗尽，停止后续尝试")
+            break
         try:
-            with DDGS(timeout=15) as client:
+            with DDGS(timeout=min(15, remaining)) as client:
                 raw = list(client.text(query, max_results=max_results, backend=backend))
             if raw:
                 for entry in raw:
@@ -130,8 +138,11 @@ class DuckDuckGoBackend:
         config: Configuration,
         loop_count: int,
     ) -> SearchOutcome:
-        del config, loop_count
-        return _normalize_search_response(_ddgs_search(query, max_results=5), search_api=self.name)
+        del loop_count
+        return _normalize_search_response(
+            _ddgs_search(query, max_results=5, timeout_seconds=config.search_timeout_seconds),
+            search_api=self.name,
+        )
 
 
 class TavilyBackend:

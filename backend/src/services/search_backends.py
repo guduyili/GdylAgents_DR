@@ -10,6 +10,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 from hello_agents.tools import SearchTool
 
 from config import Configuration
+from services.cancellation import ResearchCancelled, StopSignal, ensure_not_cancelled
 from utils import (
     deduplicate_and_format_sources,
     format_sources,
@@ -43,6 +44,16 @@ class SearchBackend(Protocol):
         *,
         config: Configuration,
         loop_count: int,
+    ) -> SearchOutcome: ...
+
+
+@runtime_checkable
+class CancellableSearchBackend(Protocol):
+    """Optional cancellation support without changing legacy search signatures."""
+
+    def search_with_cancellation(
+        self, query: str, *, config: Configuration, loop_count: int,
+        stop_event: StopSignal | None,
     ) -> SearchOutcome: ...
 
 
@@ -292,16 +303,26 @@ class FallbackSearchBackend:
         config: Configuration,
         loop_count: int,
     ) -> SearchOutcome:
+        return self.search_with_cancellation(
+            query, config=config, loop_count=loop_count, stop_event=None,
+        )
+
+    def search_with_cancellation(
+        self, query: str, *, config: Configuration, loop_count: int,
+        stop_event: StopSignal | None,
+    ) -> SearchOutcome:
         primary_backend = self._backends[0]
         notices: list[str] = []
         last_error: Exception | None = None
         deadline = monotonic() + config.search_timeout_seconds
 
         for index, backend_name in enumerate(self._backends):
+            ensure_not_cancelled(stop_event)
             if monotonic() >= deadline:
                 notices.append("搜索预算耗尽，停止后续后端尝试")
                 break
             backend = create_search_backend(backend_name)
+            ensure_not_cancelled(stop_event)
             # Construction also consumes the shared budget. Keep fractional seconds
             # separate from the validated, potentially shared Configuration object.
             remaining = deadline - monotonic()
@@ -316,13 +337,17 @@ class FallbackSearchBackend:
                     )
                 else:
                     outcome = backend.search(query, config=config, loop_count=loop_count)
+            except ResearchCancelled:
+                raise
             except Exception as exc:
+                ensure_not_cancelled(stop_event)
                 last_error = exc
                 notice = f"搜索后端 {backend_name} 失败: {exc}"
                 notices.append(notice)
                 logger.warning("搜索后端 %s 异常，准备尝试降级: %s", backend_name, exc)
                 continue
 
+            ensure_not_cancelled(stop_event)
             merged_notices = list(outcome.notices)
             if index > 0:
                 merged_notices.insert(

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from time import monotonic
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from hello_agents.tools import SearchTool
 
 from config import Configuration
+from services.cancellation import ResearchCancelled, StopSignal, ensure_not_cancelled
 from utils import (
     deduplicate_and_format_sources,
     format_sources,
@@ -42,6 +44,31 @@ class SearchBackend(Protocol):
         *,
         config: Configuration,
         loop_count: int,
+    ) -> SearchOutcome: ...
+
+
+@runtime_checkable
+class CancellableSearchBackend(Protocol):
+    """Optional cancellation support without changing legacy search signatures."""
+
+    def search_with_cancellation(
+        self, query: str, *, config: Configuration, loop_count: int,
+        stop_event: StopSignal | None,
+        timeout_seconds: float | None = None,
+    ) -> SearchOutcome: ...
+
+
+@runtime_checkable
+class BudgetedSearchBackend(Protocol):
+    """Optional capability; legacy backends keep the original search contract."""
+
+    def search_with_budget(
+        self,
+        query: str,
+        *,
+        config: Configuration,
+        loop_count: int,
+        timeout_seconds: float,
     ) -> SearchOutcome: ...
 
 
@@ -88,8 +115,12 @@ def _normalize_search_response(
     )
 
 
-def _ddgs_search(query: str, max_results: int = 5) -> dict[str, Any]:
+def _ddgs_search(
+    query: str, max_results: int = 5, *, timeout_seconds: float = 45,
+    stop_event: StopSignal | None = None,
+) -> dict[str, Any]:
     """Direct DuckDuckGo search via ddgs with lite/api/html fallback."""
+    ensure_not_cancelled(stop_event)
     try:
         from ddgs import DDGS
     except ImportError:
@@ -97,11 +128,19 @@ def _ddgs_search(query: str, max_results: int = 5) -> dict[str, Any]:
 
     results: list[dict[str, str]] = []
     notices: list[str] = []
+    deadline = monotonic() + timeout_seconds
 
     for backend in ("lite", "api", "html"):
+        ensure_not_cancelled(stop_event)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            notices.append("DuckDuckGo 搜索预算耗尽，停止后续尝试")
+            break
         try:
-            with DDGS(timeout=15) as client:
+            with DDGS(timeout=min(15, remaining)) as client:
+                ensure_not_cancelled(stop_event)
                 raw = list(client.text(query, max_results=max_results, backend=backend))
+            ensure_not_cancelled(stop_event)
             if raw:
                 for entry in raw:
                     url = entry.get("href") or entry.get("url") or ""
@@ -111,7 +150,10 @@ def _ddgs_search(query: str, max_results: int = 5) -> dict[str, Any]:
                         results.append({"title": title, "url": url, "content": content})
                 logger.info("DuckDuckGo 使用 backend=%s 返回 %d 条结果", backend, len(results))
                 break
+        except ResearchCancelled:
+            raise
         except Exception as exc:
+            ensure_not_cancelled(stop_event)
             notices.append(f"DuckDuckGo backend={backend} 失败: {exc}")
             logger.warning("DuckDuckGo backend=%s 失败: %s", backend, exc)
 
@@ -130,8 +172,40 @@ class DuckDuckGoBackend:
         config: Configuration,
         loop_count: int,
     ) -> SearchOutcome:
-        del config, loop_count
-        return _normalize_search_response(_ddgs_search(query, max_results=5), search_api=self.name)
+        return self.search_with_budget(
+            query, config=config, loop_count=loop_count,
+            timeout_seconds=config.search_timeout_seconds,
+        )
+
+    def search_with_budget(
+        self,
+        query: str,
+        *,
+        config: Configuration,
+        loop_count: int,
+        timeout_seconds: float,
+    ) -> SearchOutcome:
+        return self.search_with_cancellation(
+            query, config=config, loop_count=loop_count,
+            timeout_seconds=timeout_seconds, stop_event=None,
+        )
+
+    def search_with_cancellation(
+        self, query: str, *, config: Configuration, loop_count: int,
+        stop_event: StopSignal | None,
+        timeout_seconds: float | None = None,
+    ) -> SearchOutcome:
+        del loop_count
+        budget = config.search_timeout_seconds if timeout_seconds is None else min(
+            timeout_seconds, config.search_timeout_seconds,
+        )
+        return _normalize_search_response(
+            _ddgs_search(
+                query, max_results=5,
+                timeout_seconds=budget, stop_event=stop_event,
+            ),
+            search_api=self.name,
+        )
 
 
 class TavilyBackend:
@@ -251,21 +325,60 @@ class FallbackSearchBackend:
         config: Configuration,
         loop_count: int,
     ) -> SearchOutcome:
+        return self.search_with_cancellation(
+            query, config=config, loop_count=loop_count, stop_event=None,
+        )
+
+    def search_with_cancellation(
+        self, query: str, *, config: Configuration, loop_count: int,
+        stop_event: StopSignal | None,
+        timeout_seconds: float | None = None,
+    ) -> SearchOutcome:
         primary_backend = self._backends[0]
         notices: list[str] = []
         last_error: Exception | None = None
+        budget = config.search_timeout_seconds if timeout_seconds is None else min(
+            timeout_seconds, config.search_timeout_seconds,
+        )
+        deadline = monotonic() + budget
 
         for index, backend_name in enumerate(self._backends):
+            ensure_not_cancelled(stop_event)
+            if monotonic() >= deadline:
+                notices.append("搜索预算耗尽，停止后续后端尝试")
+                break
             backend = create_search_backend(backend_name)
+            ensure_not_cancelled(stop_event)
+            # Construction also consumes the shared budget. Keep fractional seconds
+            # separate from the validated, potentially shared Configuration object.
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                notices.append("搜索预算耗尽，停止后续后端尝试")
+                break
             try:
-                outcome = backend.search(query, config=config, loop_count=loop_count)
+                if isinstance(backend, CancellableSearchBackend):
+                    outcome = backend.search_with_cancellation(
+                        query, config=config, loop_count=loop_count,
+                        timeout_seconds=remaining, stop_event=stop_event,
+                    )
+                elif isinstance(backend, BudgetedSearchBackend):
+                    outcome = backend.search_with_budget(
+                        query, config=config, loop_count=loop_count,
+                        timeout_seconds=remaining,
+                    )
+                else:
+                    outcome = backend.search(query, config=config, loop_count=loop_count)
+            except ResearchCancelled:
+                raise
             except Exception as exc:
+                ensure_not_cancelled(stop_event)
                 last_error = exc
                 notice = f"搜索后端 {backend_name} 失败: {exc}"
                 notices.append(notice)
                 logger.warning("搜索后端 %s 异常，准备尝试降级: %s", backend_name, exc)
                 continue
 
+            ensure_not_cancelled(stop_event)
             merged_notices = list(outcome.notices)
             if index > 0:
                 merged_notices.insert(
@@ -284,7 +397,7 @@ class FallbackSearchBackend:
 
         if last_error is not None:
             logger.error(
-                "所有搜索后端均失败 primary=%s fallbacks=%s error=%s",
+                "搜索结束但未获得结果 primary=%s fallbacks=%s error=%s",
                 primary_backend,
                 self._backends[1:],
                 last_error,

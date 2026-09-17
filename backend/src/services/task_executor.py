@@ -12,12 +12,12 @@ from typing import Any, Protocol
 from config import Configuration
 from models import SummaryState, TodoItem
 from services.browser_fetch import BrowserFetchService
-from services.cancellation import ResearchCancelled, ensure_not_cancelled, is_cancelled
+from services.cancellation import ResearchCancelled, ScopedStopSignal, ensure_not_cancelled, is_cancelled
 from services.fact_check_service import FactCheckService
 from services.research_pipeline import ResearchPipelineConfig
 from services.search import dispatch_search, prepare_research_context
 from services.skill_loader import SkillLoader
-from services.search_backends import SearchBackend
+from services.search_backends import CancellableSearchBackend, SearchBackend
 from services.stream_events import build_stream_event
 from services.summarizer import SummarizationService
 
@@ -321,28 +321,43 @@ class TaskExecutor:
         *,
         stop_event: Event | None = None,
     ) -> tuple[dict[str, Any] | None, list[str], str | None, str]:
-        if self._search_backend is not None:
-            def run_search() -> tuple[dict[str, Any] | None, list[str], str | None, str]:
-                outcome = self._search_backend.search(
-                    query,
-                    config=self._config,
-                    loop_count=loop_count,
-                )
+        search_stop = ScopedStopSignal(stop_event)
+
+        def run_search() -> tuple[dict[str, Any] | None, list[str], str | None, str]:
+            ensure_not_cancelled(search_stop)
+            if self._search_backend is not None:
+                if isinstance(self._search_backend, CancellableSearchBackend):
+                    outcome = self._search_backend.search_with_cancellation(
+                        query, config=self._config, loop_count=loop_count,
+                        stop_event=search_stop,
+                    )
+                else:
+                    outcome = self._search_backend.search(
+                        query, config=self._config, loop_count=loop_count,
+                    )
+                ensure_not_cancelled(search_stop)
                 return outcome.payload, outcome.notices, outcome.answer_text, outcome.backend_label
 
+            if self._search_dispatcher is dispatch_search:
+                result = dispatch_search(
+                    query, self._config, loop_count, stop_event=search_stop,
+                )
+            else:
+                result = self._search_dispatcher(query, self._config, loop_count)
+            ensure_not_cancelled(search_stop)
+            return result
+
+        try:
             return self._call_with_timeout(
                 run_search,
                 timeout_seconds=self._config.search_timeout_seconds,
                 operation="搜索",
                 stop_event=stop_event,
             )
-
-        return self._call_with_timeout(
-            lambda: self._search_dispatcher(query, self._config, loop_count),
-            timeout_seconds=self._config.search_timeout_seconds,
-            operation="搜索",
-            stop_event=stop_event,
-        )
+        finally:
+            # The caller may have timed out while the SDK is still running.
+            # Stop later attempts without cancelling sibling tasks or the run.
+            search_stop.set()
 
     def _run_summary_with_timeout(
         self,
@@ -364,22 +379,22 @@ class TaskExecutor:
         operation: str,
         stop_event: Event | None = None,
     ) -> Any:
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
             future = executor.submit(fn)
             deadline = self._monotonic_clock() + timeout_seconds
-            try:
-                while True:
-                    ensure_not_cancelled(stop_event)
-                    remaining = deadline - self._monotonic_clock()
-                    if remaining <= 0:
-                        raise TimeoutError(f"{operation}超时（{timeout_seconds}s）")
-                    try:
-                        return future.result(timeout=min(0.2, remaining))
-                    except FuturesTimeoutError:
-                        continue
-            finally:
-                if is_cancelled(stop_event):
-                    future.cancel()
+            while True:
+                ensure_not_cancelled(stop_event)
+                remaining = deadline - self._monotonic_clock()
+                if remaining <= 0:
+                    raise TimeoutError(f"{operation}超时（{timeout_seconds}s）")
+                try:
+                    return future.result(timeout=min(0.2, remaining))
+                except FuturesTimeoutError:
+                    continue
+        finally:
+            # Release the caller on timeout/cancel; running tools must finish themselves.
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _fail_task(
         self,

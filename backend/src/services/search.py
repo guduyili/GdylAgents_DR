@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional, Tuple
 
 from config import Configuration
+from services.cancellation import StopSignal
 from services.search_backends import (
     FallbackSearchBackend,
     SearchBackend,
@@ -26,12 +27,15 @@ def dispatch_search(
     query: str,
     config: Configuration,
     loop_count: int,
+    *,
+    stop_event: StopSignal | None = None,
 ) -> Tuple[dict[str, Any] | None, list[str], Optional[str], str]:
     """根据配置调用搜索后端（含降级链），并对结果做标准化处理。"""
-    outcome = create_configured_search_backend(config).search(
+    outcome = FallbackSearchBackend(config).search_with_cancellation(
         query,
         config=config,
         loop_count=loop_count,
+        stop_event=stop_event,
     )
     return outcome.payload, outcome.notices, outcome.answer_text, outcome.backend_label
 

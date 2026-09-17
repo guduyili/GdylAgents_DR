@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from threading import Lock
+from threading import Event, Lock
 
 from config import Configuration, SearchAPI
 from models import SummaryState, TodoItem
@@ -19,7 +19,7 @@ class FakePlanner:
 
 
 class FakeTaskExecutor:
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None) -> Iterator[dict]:
+    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None, stop_event: Event | None = None) -> Iterator[dict]:
         yield {"type": "sources", "task_id": task.id, "latest_sources": "S", "backend": "duckduckgo"}
         task.summary = "任务摘要"
         task.status = "completed"

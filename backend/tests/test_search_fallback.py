@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import pytest
+import sys
+from types import SimpleNamespace
+
 from config import Configuration, SearchAPI
 from services.search import dispatch_search
-from services.search_backends import SearchOutcome
+from services.search_backends import DuckDuckGoBackend, SearchOutcome
 
 
 def test_dispatch_search_falls_back_when_primary_raises(monkeypatch) -> None:
@@ -74,3 +78,116 @@ def test_dispatch_search_returns_empty_when_all_backends_fail(monkeypatch) -> No
     assert payload["results"] == []
     assert answer is None
     assert len(notices) >= 2
+
+
+@pytest.mark.parametrize(
+    ("durations", "successful_backend", "expected_calls", "exhausted"),
+    [
+        ([2, 0, 0], "duckduckgo", ["tavily"], True),
+        ([3, 0, 0], "duckduckgo", ["tavily"], True),
+        ([0.5, 0.5, 0], "duckduckgo", ["tavily", "duckduckgo"], False),
+        ([0.75, 1.25, 0], "searxng", ["tavily", "duckduckgo"], True),
+    ],
+    ids=["exact-deadline", "over-deadline", "fallback-within-budget", "shared-chain-budget"],
+)
+def test_dispatch_search_stops_fallback_after_budget_exhaustion(
+    monkeypatch, durations, successful_backend, expected_calls, exhausted
+) -> None:
+    config = Configuration(
+        search_api=SearchAPI.TAVILY,
+        search_fallback_chain=[SearchAPI.DUCKDUCKGO, SearchAPI("searxng")],
+        search_timeout_seconds=2,
+        enable_notes=False,
+    )
+    original_config = config.model_dump()
+    now = [0.0]
+    created: list[str] = []
+    calls: list[str] = []
+
+    class TimedBackend:
+        def __init__(self, name):
+            self.name = name
+
+        def search(self, query, *, config, loop_count):
+            calls.append(self.name)
+            now[0] += durations[len(calls) - 1]
+            if self.name != successful_backend:
+                raise RuntimeError(f"{self.name} down")
+            return SearchOutcome(
+                payload={"results": [{"title": "A", "url": "https://example.com"}]},
+                notices=[], answer_text=None, backend_label=self.name,
+            )
+
+    def create_backend(name):
+        created.append(name)
+        return TimedBackend(name)
+
+    monkeypatch.setattr("services.search_backends.monotonic", lambda: now[0])
+    monkeypatch.setattr("services.search_backends.create_search_backend", create_backend)
+
+    payload, notices, answer, backend = dispatch_search("agent", config, 0)
+
+    assert calls == expected_calls
+    assert created == expected_calls
+    assert any("预算耗尽" in notice for notice in notices) is exhausted
+    assert any("tavily down" in notice for notice in notices)
+    assert bool(payload["results"]) is not exhausted
+    assert backend == ("tavily" if exhausted else "duckduckgo")
+    assert answer is None
+    assert config.model_dump() == original_config
+
+
+@pytest.mark.parametrize("factory_seconds, expected_timeouts", [(0.25, [1.0]), (1.0, [0.25]), (1.25, []), (2.0, [])])
+def test_fallback_passes_remaining_budget_to_duckduckgo(
+    monkeypatch, factory_seconds, expected_timeouts
+) -> None:
+    config = Configuration(
+        search_api=SearchAPI.TAVILY,
+        search_fallback_chain=[SearchAPI.DUCKDUCKGO],
+        search_timeout_seconds=2,
+        enable_notes=False,
+    )
+    original_config = config.model_dump()
+    now = [0.0]
+    timeouts = []
+
+    class Primary:
+        def search(self, query, *, config: Configuration, loop_count):
+            assert query == "agent" and loop_count == 3
+            assert config.model_dump() == original_config
+            now[0] += 0.75
+            raise RuntimeError("primary down")
+
+    class FakeDDGS:
+        def __init__(self, *, timeout):
+            timeouts.append(timeout)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def text(self, query, *, max_results, backend):
+            assert query == "agent" and backend == "lite"
+            return [{"title": "A", "href": "https://example.com", "body": "evidence"}]
+
+    def create_backend(name):
+        if name == "tavily":
+            return Primary()
+        now[0] += factory_seconds
+        return DuckDuckGoBackend()
+
+    monkeypatch.setattr("services.search_backends.monotonic", lambda: now[0])
+    monkeypatch.setattr("services.search_backends.create_search_backend", create_backend)
+    monkeypatch.setitem(sys.modules, "ddgs", SimpleNamespace(DDGS=FakeDDGS))
+
+    payload, notices, answer, backend = dispatch_search("agent", config, 3)
+
+    assert timeouts == pytest.approx(expected_timeouts)
+    assert bool(payload["results"]) is bool(expected_timeouts)
+    assert any("预算耗尽" in notice for notice in notices) is (not expected_timeouts)
+    assert any("primary down" in notice for notice in notices)
+    assert backend == ("duckduckgo" if expected_timeouts else "tavily")
+    assert answer is None
+    assert config.model_dump() == original_config

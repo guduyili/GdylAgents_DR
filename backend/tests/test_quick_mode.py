@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from threading import Event
+
 from models import SummaryState, TodoItem
 from services.review_service import ReviewService
 from services.stream_runner import StreamRunner
@@ -14,7 +16,7 @@ class FakePlanner:
 
 
 class FakeTaskExecutor:
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None):
+    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None, stop_event: Event | None = None):
         task.summary = "快速摘要内容"
         task.sources_summary = "来源 A"
         task.status = "completed"

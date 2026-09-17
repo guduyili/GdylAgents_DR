@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from threading import Event
+
 from models import SummaryState, TodoItem
 from services.stream_runner import StreamRunner
 
@@ -23,7 +25,7 @@ class FakeTaskExecutor:
         self.fail = fail
         self.calls: list[tuple[SummaryState, TodoItem, bool, int | None]] = []
 
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None):
+    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None, stop_event: Event | None = None):
         self.calls.append((state, task, emit_stream, step))
         if self.fail:
             raise self.fail

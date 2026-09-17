@@ -46,6 +46,7 @@ GdylAgents_DR 是一个基于 FastAPI、Vue 3 和 HelloAgents 的深度研究助
     ├── rag_learning_path.md       # RAG 进阶学习与实现路径（历史报告检索）
     ├── project.md                 # 架构与前后端调用链概览
     ├── agent_learning_roadmap.md  # Agent 知识学习与扩展路线图（项目视角）
+    ├── agent_deep_dive_plan.md    # 原理与工程进阶计划：代码基线、实验、验收与优先级
     ├── learning.md                # 项目内具体练习与 8 周动手计划
     ├── cancellation.md            # 取消链路与 Redis 多 worker 广播
     ├── run_store.md               # 研究运行时间线存储
@@ -188,6 +189,10 @@ Compose 中与本地开发不同的路径/行为（`environment` 会覆盖 `env_
 
 ## 测试
 
+项目协作与版本更新必须遵循 [AGENTS.md](AGENTS.md)。
+
+最小版本更新及逐版测试记录见 [版本迭代索引](docs/releases/README.md)。每版记录改动范围、复现命令、实际测试结果，并使用独立 Git 提交和版本标签管理。
+
 后端测试推荐使用 uv 安装 dev 依赖并运行：
 
 ```bash
@@ -218,6 +223,8 @@ npm run build
 
 **学习文档分层**：
 
+**后续深入学习 Agent 原理与工程实现**：优先阅读 [进阶学习、优化与拓展计划](docs/agent_deep_dive_plan.md)，按“评估基线 → 决策循环与工具 → 证据质量 → RAG → 状态恢复 → 多 Agent 对照实验”推进。该文以当前代码核对能力边界，并给出实验与验收标准。
+
 | 文档 | 适合场景 |
 |------|----------|
 | [docs/beginner_agent_guide.md](docs/beginner_agent_guide.md) | **Agent 初学者先读**：概念心智模型、6 周入门路径、自检清单、文档阅读顺序 |
@@ -225,6 +232,7 @@ npm run build
 | [docs/topic_call_chain.md](docs/topic_call_chain.md) | 跑通系统后：用户输入 topic 后的完整调用链 |
 | [docs/learning.md](docs/learning.md) | 已懂主链路：项目内具体练习、代码阅读路径、最小可验证交付 |
 | [docs/agent_learning_roadmap.md](docs/agent_learning_roadmap.md) | 进阶全景：编排、RAG、MCP、多 Agent、平台化 |
+| [docs/agent_deep_dive_plan.md](docs/agent_deep_dive_plan.md) | **原理与工程深挖**：当前代码边界、优先实验、12 周计划与评估口径 |
 | [docs/cancellation.md](docs/cancellation.md) | 长任务取消链路与 Redis 多 worker 部署 |
 
 当前仓库已进入工程阶段（并发控制、取消广播、fact_check/review、evals、Skill 等均已落地）。  

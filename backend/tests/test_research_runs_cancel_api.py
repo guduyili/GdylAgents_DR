@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from threading import Event
 
+import pytest
+
 from main import CancelResearchRunResponse, create_app
 from services.run_cancellation_registry import MemoryRunCancellationRegistry
 from services.research_run_store import InMemoryResearchRunStore
+
+pytestmark = pytest.mark.usefixtures("isolated_run_configuration")
 
 
 def _find_route(app, path: str, method: str):
@@ -19,6 +23,8 @@ def test_cancel_research_run_triggers_registered_stop_event() -> None:
     registry: MemoryRunCancellationRegistry = app.state.run_cancellation_registry
     run_store: InMemoryResearchRunStore = app.state.run_store
 
+    assert isinstance(registry, MemoryRunCancellationRegistry)
+    assert isinstance(run_store, InMemoryResearchRunStore)
     stop_event = Event()
     run_store.start_run(run_id="run-cancel-001", topic="取消测试")
     registry.register("run-cancel-001", stop_event)
@@ -38,6 +44,7 @@ def test_cancel_research_run_triggers_registered_stop_event() -> None:
 def test_cancel_research_run_returns_false_for_completed_run() -> None:
     app = create_app()
     run_store: InMemoryResearchRunStore = app.state.run_store
+    assert isinstance(run_store, InMemoryResearchRunStore)
     run_store.start_run(run_id="run-done", topic="已完成")
     run_store.complete_run("run-done")
 

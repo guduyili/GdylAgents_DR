@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
 from main import create_app
 from services.research_run_store import InMemoryResearchRunStore, SQLiteResearchRunStore
+
+pytestmark = pytest.mark.usefixtures("isolated_run_configuration")
 
 
 def test_research_run_endpoint_reads_shared_app_run_store() -> None:

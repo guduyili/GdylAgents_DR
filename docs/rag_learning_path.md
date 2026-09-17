@@ -1,5 +1,7 @@
 # RAG 进阶学习与实现路径（GdylAgents_DR）
 
+> **与整体进阶计划的关系（2026-09-15）**：若目标是深入学习 Agent 原理与工程实现，先参考 [进阶计划](agent_deep_dive_plan.md) 建立评估基线，再使用本文开展 RAG 专题实验。向量检索是否优先、索引更新方式和真实效果均需结合当前代码与对照实验确定。
+
 > 你已选择 **RAG（Retrieval-Augmented Generation）** 作为进阶主线。  
 > 本文把「通用 RAG 知识」锚到本仓库的 **历史研究报告**，按周交付、可验证。  
 > 前置：完成 [beginner_agent_guide.md](./beginner_agent_guide.md) 入门自检；建议读过 [topic_call_chain.md](./topic_call_chain.md)。

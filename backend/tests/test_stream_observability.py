@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from threading import Event
+
 from models import SummaryState, TodoItem
 from services.stream_runner import StreamRunner
 
@@ -13,7 +15,7 @@ class FakePlanner:
 
 
 class FakeTaskExecutor:
-    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None):
+    def execute(self, state: SummaryState, task: TodoItem, *, emit_stream: bool, step: int | None = None, stop_event: Event | None = None):
         yield {"type": "tool_call", "event_id": 1, "task_id": task.id, "agent": "A", "tool": "note"}
 
 
@@ -43,6 +45,7 @@ def test_stream_runner_adds_same_run_id_and_timestamp_to_all_public_events() -> 
     events = list(runner.run("AI Agent", todo_items=[task]))
 
     assert events
+    assert any(event["type"] == "tool_call" for event in events)
     assert {event["run_id"] for event in events} == {"run-test-001"}
     assert {event["timestamp"] for event in events} == {"2026-06-05T12:00:00Z"}
     assert all(event["type"] != "__task_done__" for event in events)

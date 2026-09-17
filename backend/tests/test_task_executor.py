@@ -75,6 +75,7 @@ def test_execute_stream_skips_task_when_search_has_no_results() -> None:
         drain_tool_events=lambda state, step=None: [],
         search_dispatcher=fake_dispatch,
         context_preparer=lambda search_result, answer_text, config: ("", ""),
+        monotonic_clock=lambda: 0.0,
     )
 
     events = list(executor.execute(state, task, emit_stream=True, step=2))

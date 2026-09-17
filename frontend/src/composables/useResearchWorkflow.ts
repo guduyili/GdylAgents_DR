@@ -28,6 +28,7 @@ export interface ResearchFormState {
   topic: string;
   searchApi: string;
   researchMode: "deep" | "quick";
+  executionMode: "fixed" | "decision";
 }
 
 interface WorkflowOptions {
@@ -628,6 +629,7 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
     topic: string;
     search_api?: string;
     mode?: "deep" | "quick";
+    execution_mode?: "fixed" | "decision";
     todo_items?: ResearchTodoItem[];
   }) {
     if (currentController) {
@@ -670,6 +672,11 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
 
     if (form.researchMode === "quick") {
       await startQuickResearch();
+      return;
+    }
+
+    if (form.executionMode === "decision") {
+      await startDecisionResearch();
       return;
     }
 
@@ -724,7 +731,24 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
     await runResearch({
       topic: form.topic.trim(),
       search_api: form.searchApi || undefined,
-      mode: "quick"
+      mode: "quick",
+      execution_mode: form.executionMode === "decision" ? "decision" : undefined
+    });
+  }
+
+  async function startDecisionResearch() {
+    loading.value = true;
+    planning.value = false;
+    error.value = "";
+    isExpanded.value = true;
+    resetWorkflowState();
+    clearPlannedTasks();
+
+    await runResearch({
+      topic: form.topic.trim(),
+      search_api: form.searchApi || undefined,
+      mode: "quick",
+      execution_mode: "decision"
     });
   }
 
@@ -755,6 +779,7 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
       topic: form.topic.trim(),
       search_api: form.searchApi || undefined,
       mode: form.researchMode,
+      execution_mode: form.executionMode === "decision" ? "decision" : undefined,
       todo_items: confirmedTasks
     });
   }
@@ -780,6 +805,7 @@ export function useResearchWorkflow(form: ResearchFormState, options: WorkflowOp
       topic: form.topic.trim(),
       search_api: form.searchApi || undefined,
       mode: form.researchMode,
+      execution_mode: form.executionMode === "decision" ? "decision" : undefined,
       todo_items: [
         {
           id: task.id,

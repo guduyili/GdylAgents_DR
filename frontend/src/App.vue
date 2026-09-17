@@ -11,6 +11,7 @@
         v-model:topic="form.topic"
         v-model:search-api="form.searchApi"
         v-model:research-mode="form.researchMode"
+        v-model:execution-mode="form.executionMode"
         :search-options="searchOptions"
         :loading="loading"
         :planning="planning"
@@ -127,7 +128,8 @@ import { renderReportHtml } from "./utils/reportMarkdown";
 const form = reactive({
   topic: "",
   searchApi: "",
-  researchMode: "deep" as "deep" | "quick"
+  researchMode: "deep" as "deep" | "quick",
+  executionMode: "fixed" as "fixed" | "decision"
 });
 
 const {

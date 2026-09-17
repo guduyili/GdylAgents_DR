@@ -125,6 +125,10 @@ class Configuration(BaseModel):
         title="搜索超时秒数",
         description="单个任务搜索阶段的最大等待时间",
     )
+    task_execution_mode: Literal["fixed", "decision"] = "fixed"
+    decision_max_steps: int = Field(default=4, ge=1, le=12)
+    decision_total_timeout_seconds: int = Field(default=90, ge=1, le=600)
+    decision_timeout_seconds: int = Field(default=20, ge=1, le=120)
     summary_timeout_seconds: int = Field(
         default=120,
         ge=1,
@@ -243,6 +247,10 @@ class Configuration(BaseModel):
             "run_store_db_path": os.getenv("RUN_STORE_DB_PATH"),
             "max_concurrent_tasks": os.getenv("MAX_CONCURRENT_TASKS"),
             "search_timeout_seconds": os.getenv("SEARCH_TIMEOUT_SECONDS"),
+            "task_execution_mode": os.getenv("TASK_EXECUTION_MODE"),
+            "decision_max_steps": os.getenv("DECISION_MAX_STEPS"),
+            "decision_total_timeout_seconds": os.getenv("DECISION_TOTAL_TIMEOUT_SECONDS"),
+            "decision_timeout_seconds": os.getenv("DECISION_TIMEOUT_SECONDS"),
             "summary_timeout_seconds": os.getenv("SUMMARY_TIMEOUT_SECONDS"),
             "research_mode": os.getenv("RESEARCH_MODE"),
             "enable_report_review": os.getenv("ENABLE_REPORT_REVIEW"),
@@ -297,4 +305,3 @@ class Configuration(BaseModel):
     def resolved_report_model(self) -> Optional[str]:
         """返回报告专用模型名称：优先取 report_model_id，回退到主模型。"""
         return self.report_model_id or self.resolved_model()
-

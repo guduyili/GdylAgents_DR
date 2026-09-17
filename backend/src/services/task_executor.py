@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import json
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from queue import Empty, Queue
@@ -17,7 +18,8 @@ from services.fact_check_service import FactCheckService
 from services.research_pipeline import ResearchPipelineConfig
 from services.search import dispatch_search, prepare_research_context
 from services.skill_loader import SkillLoader
-from services.search_backends import CancellableSearchBackend, SearchBackend
+from services.search_backends import CancellableSearchBackend, SearchBackend, SearchOutcome
+from services.decision_loop import DecisionLoop, DecisionLoopError
 from services.stream_events import build_stream_event
 from services.summarizer import SummarizationService
 
@@ -67,6 +69,7 @@ class TaskExecutor:
         pipeline_config: ResearchPipelineConfig | None = None,
         context_preparer: ContextPreparer = prepare_research_context,
         monotonic_clock: Callable[[], float] | None = None,
+        decision_provider: Callable | None = None,
     ) -> None:
         self._config = config
         self._summarizer = summarizer
@@ -82,6 +85,7 @@ class TaskExecutor:
         )
         self._context_preparer = context_preparer
         self._monotonic_clock = monotonic_clock or time.monotonic
+        self._decision_provider = decision_provider
         self.last_search_notices: list[str] = []
 
     def execute(
@@ -107,11 +111,14 @@ class TaskExecutor:
             return
 
         try:
-            search_result, notices, answer_text, backend = self._run_search_with_timeout(
-                task.query,
-                state.research_loop_count,
-                stop_event=stop_event,
-            )
+            if self._config.task_execution_mode == "decision":
+                search_result, notices, answer_text, backend = yield from self._run_decision_search(
+                    state, task, emit_stream=emit_stream, step=step, stop_event=stop_event,
+                )
+            else:
+                search_result, notices, answer_text, backend = self._run_search_with_timeout(
+                    task.query, state.research_loop_count, stop_event=stop_event,
+                )
         except ResearchCancelled:
             yield from self._cancel_task(
                 task,
@@ -120,7 +127,7 @@ class TaskExecutor:
                 task_started_at=task_started_at,
             )
             return
-        except TimeoutError as exc:
+        except (TimeoutError, DecisionLoopError) as exc:
             yield from self._fail_task(
                 state,
                 task,
@@ -314,14 +321,67 @@ class TaskExecutor:
             }
         )
 
+    def _run_decision_search(self, state, task, *, emit_stream, step, stop_event):
+        if self._decision_provider is None:
+            raise DecisionLoopError("决策模式未配置决策器")
+        task.decision_trace = []
+        task.decision_stop_reason = None
+
+        def decide(context, remaining):
+            budget = min(remaining, self._config.decision_timeout_seconds)
+            return self._call_with_timeout(
+                lambda: self._decision_provider(context, budget),
+                timeout_seconds=budget, operation="决策", stop_event=stop_event,
+            )
+
+        def search(query, remaining):
+            payload, notices, answer, backend = self._run_search_with_timeout(
+                query, state.research_loop_count, stop_event=stop_event, timeout_seconds=remaining,
+            )
+            return SearchOutcome(payload or {"results": []}, notices, answer, backend)
+
+        loop = DecisionLoop(
+            max_steps=self._config.decision_max_steps,
+            timeout_seconds=self._config.decision_total_timeout_seconds,
+            clock=self._monotonic_clock,
+        ).run(task, state.research_topic, decide=decide, search=search, stop_event=stop_event)
+        while True:
+            try:
+                record = next(loop)
+            except StopIteration as done:
+                result = done.value
+                break
+            except ResearchCancelled:
+                task.decision_stop_reason = "cancelled"
+                raise
+            task.decision_trace.append(record)
+            if record["action"] == "stop":
+                task.decision_stop_reason = record["stop_reason"]
+            if emit_stream:
+                yield build_stream_event({
+                    "type": "status", "task_id": task.id, "step": step,
+                    "source": "decision_loop",
+                    "message": "任务决策 " + json.dumps(record, ensure_ascii=False),
+                })
+        outcome = result.outcome
+        if not outcome.payload["results"] and result.stop_reason in {
+            "timeout", "invalid_action", "decision_error",
+        }:
+            raise DecisionLoopError(f"决策循环未获得证据：{result.stop_reason}")
+        return outcome.payload, outcome.notices, outcome.answer_text, outcome.backend_label
+
     def _run_search_with_timeout(
         self,
         query: str,
         loop_count: int,
         *,
         stop_event: Event | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[dict[str, Any] | None, list[str], str | None, str]:
         search_stop = ScopedStopSignal(stop_event)
+        budget = self._config.search_timeout_seconds
+        if timeout_seconds is not None:
+            budget = min(budget, timeout_seconds)
 
         def run_search() -> tuple[dict[str, Any] | None, list[str], str | None, str]:
             ensure_not_cancelled(search_stop)
@@ -330,6 +390,7 @@ class TaskExecutor:
                     outcome = self._search_backend.search_with_cancellation(
                         query, config=self._config, loop_count=loop_count,
                         stop_event=search_stop,
+                        timeout_seconds=budget,
                     )
                 else:
                     outcome = self._search_backend.search(
@@ -341,6 +402,7 @@ class TaskExecutor:
             if self._search_dispatcher is dispatch_search:
                 result = dispatch_search(
                     query, self._config, loop_count, stop_event=search_stop,
+                    timeout_seconds=budget,
                 )
             else:
                 result = self._search_dispatcher(query, self._config, loop_count)
@@ -350,7 +412,7 @@ class TaskExecutor:
         try:
             return self._call_with_timeout(
                 run_search,
-                timeout_seconds=self._config.search_timeout_seconds,
+                timeout_seconds=budget,
                 operation="搜索",
                 stop_event=stop_event,
             )
@@ -375,7 +437,7 @@ class TaskExecutor:
         self,
         fn: Callable[[], Any],
         *,
-        timeout_seconds: int,
+        timeout_seconds: float,
         operation: str,
         stop_event: Event | None = None,
     ) -> Any:

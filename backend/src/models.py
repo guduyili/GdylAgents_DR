@@ -19,6 +19,8 @@ class TodoItem:
     note_path: Optional[str] = field(default=None)       # 笔记文件的本地路径
     stream_token: Optional[str] = field(default=None)    # 流式推送时用于标识该任务的 token
     task_run_id: Optional[str] = field(default=None)     # 稳定链路 ID：{run_id}:task:{id}
+    decision_trace: list[dict] = field(default_factory=list)
+    decision_stop_reason: Optional[str] = field(default=None)
 
 
 @dataclass(kw_only=True)

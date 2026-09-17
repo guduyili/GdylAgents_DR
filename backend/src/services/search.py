@@ -29,6 +29,7 @@ def dispatch_search(
     loop_count: int,
     *,
     stop_event: StopSignal | None = None,
+    timeout_seconds: float | None = None,
 ) -> Tuple[dict[str, Any] | None, list[str], Optional[str], str]:
     """根据配置调用搜索后端（含降级链），并对结果做标准化处理。"""
     outcome = FallbackSearchBackend(config).search_with_cancellation(
@@ -36,6 +37,7 @@ def dispatch_search(
         config=config,
         loop_count=loop_count,
         stop_event=stop_event,
+        timeout_seconds=timeout_seconds,
     )
     return outcome.payload, outcome.notices, outcome.answer_text, outcome.backend_label
 

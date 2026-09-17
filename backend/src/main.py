@@ -59,6 +59,10 @@ class ResearchRequest(BaseModel):
         default=None,
         description="研究模式：deep=完整规划；quick=跳过规划，单次搜索总结",
     )
+    execution_mode: Literal["fixed", "decision"] | None = Field(
+        default=None,
+        description="任务执行模式：fixed=固定搜索；decision=受限 search/finish 决策循环",
+    )
 
 
 class TodoItemRequest(BaseModel):
@@ -117,6 +121,8 @@ def _build_config(payload: ResearchRequest) -> Configuration:
         overrides["search_api"] = payload.search_api
     if payload.mode is not None:
         overrides["research_mode"] = payload.mode
+    if payload.execution_mode is not None:
+        overrides["task_execution_mode"] = payload.execution_mode
     return Configuration.from_env(overrides=overrides)
 
 

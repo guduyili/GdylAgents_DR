@@ -28,6 +28,16 @@
 
       <section class="options">
         <label class="field option">
+          <span>任务执行</span>
+          <select
+            :value="executionMode"
+            @change="$emit('update:executionMode', ($event.target as HTMLSelectElement).value as 'fixed' | 'decision')"
+          >
+            <option value="fixed">固定流程</option>
+            <option value="decision">决策循环（search / finish）</option>
+          </select>
+        </label>
+        <label class="field option">
           <span>研究模式</span>
           <select
             :value="researchMode"
@@ -61,6 +71,8 @@
             {{
               loading
                 ? "处理中..."
+              : executionMode === "decision"
+                ? "开始决策研究"
                 : researchMode === "quick"
                   ? planReady
                     ? "重新开始快速研究"
@@ -96,6 +108,7 @@ defineProps<{
   topic: string;
   searchApi: string;
   researchMode: "deep" | "quick";
+  executionMode: "fixed" | "decision";
   searchOptions: string[];
   loading: boolean;
   planning: boolean;
@@ -110,5 +123,6 @@ defineEmits<{
   'update:topic': [value: string];
   'update:searchApi': [value: string];
   'update:researchMode': [value: "deep" | "quick"];
+  'update:executionMode': [value: "fixed" | "decision"];
 }>();
 </script>

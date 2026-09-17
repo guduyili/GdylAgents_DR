@@ -2,6 +2,7 @@ export interface ResearchRequest {
   topic: string;
   search_api?: string;
   mode?: "deep" | "quick";
+  execution_mode?: "fixed" | "decision";
   todo_items?: ResearchTodoItem[];
 }
 

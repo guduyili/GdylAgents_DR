@@ -29,6 +29,7 @@ from services.stream_runner import StreamRunner
 from services.summarizer import SummarizationService
 from services.sync_runner import SyncRunner
 from services.task_executor import TaskExecutor
+from services.task_decider import LLMTaskDecider
 from services.task_serializer import serialize_task
 from services.tool_event_bridge import ToolEventBridge
 from services.tool_events import ToolCallTracker
@@ -137,6 +138,7 @@ def create_research_services(
         fact_check_service=fact_check_service,
         skill_loader=skill_loader,
         pipeline_config=pipeline_config,
+        decision_provider=LLMTaskDecider(llm) if config.task_execution_mode == "decision" else None,
     )
     sync_runner = SyncRunner(
         planner=planner,

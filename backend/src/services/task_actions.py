@@ -17,7 +17,7 @@ ActionText = Annotated[
 
 
 class _TaskAction(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, revalidate_instances="always")
 
     # A short observable explanation, not a request for private model reasoning.
     reason: ActionText

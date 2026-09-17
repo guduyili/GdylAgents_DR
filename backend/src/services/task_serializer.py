@@ -23,4 +23,7 @@ def serialize_task(task: TodoItem) -> dict[str, Any]:
     }
     if task.task_run_id:
         result["task_run_id"] = task.task_run_id
+    if task.decision_trace:
+        result["decision_trace"] = list(task.decision_trace)
+        result["decision_stop_reason"] = task.decision_stop_reason
     return result

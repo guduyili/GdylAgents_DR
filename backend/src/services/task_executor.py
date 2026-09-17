@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from config import Configuration
 from models import SummaryState, TodoItem
 from services.browser_fetch import BrowserFetchService
-from services.cancellation import ResearchCancelled, ensure_not_cancelled, is_cancelled
+from services.cancellation import ResearchCancelled, ScopedStopSignal, ensure_not_cancelled, is_cancelled
 from services.fact_check_service import FactCheckService
 from services.research_pipeline import ResearchPipelineConfig
 from services.search import dispatch_search, prepare_research_context
@@ -321,45 +321,43 @@ class TaskExecutor:
         *,
         stop_event: Event | None = None,
     ) -> tuple[dict[str, Any] | None, list[str], str | None, str]:
-        if self._search_backend is not None:
-            def run_search() -> tuple[dict[str, Any] | None, list[str], str | None, str]:
-                ensure_not_cancelled(stop_event)
+        search_stop = ScopedStopSignal(stop_event)
+
+        def run_search() -> tuple[dict[str, Any] | None, list[str], str | None, str]:
+            ensure_not_cancelled(search_stop)
+            if self._search_backend is not None:
                 if isinstance(self._search_backend, CancellableSearchBackend):
                     outcome = self._search_backend.search_with_cancellation(
                         query, config=self._config, loop_count=loop_count,
-                        stop_event=stop_event,
+                        stop_event=search_stop,
                     )
                 else:
                     outcome = self._search_backend.search(
                         query, config=self._config, loop_count=loop_count,
                     )
-                ensure_not_cancelled(stop_event)
+                ensure_not_cancelled(search_stop)
                 return outcome.payload, outcome.notices, outcome.answer_text, outcome.backend_label
 
+            if self._search_dispatcher is dispatch_search:
+                result = dispatch_search(
+                    query, self._config, loop_count, stop_event=search_stop,
+                )
+            else:
+                result = self._search_dispatcher(query, self._config, loop_count)
+            ensure_not_cancelled(search_stop)
+            return result
+
+        try:
             return self._call_with_timeout(
                 run_search,
                 timeout_seconds=self._config.search_timeout_seconds,
                 operation="搜索",
                 stop_event=stop_event,
             )
-
-        def run_dispatcher():
-            ensure_not_cancelled(stop_event)
-            if self._search_dispatcher is dispatch_search:
-                result = dispatch_search(
-                    query, self._config, loop_count, stop_event=stop_event,
-                )
-            else:
-                result = self._search_dispatcher(query, self._config, loop_count)
-            ensure_not_cancelled(stop_event)
-            return result
-
-        return self._call_with_timeout(
-            run_dispatcher,
-            timeout_seconds=self._config.search_timeout_seconds,
-            operation="搜索",
-            stop_event=stop_event,
-        )
+        finally:
+            # The caller may have timed out while the SDK is still running.
+            # Stop later attempts without cancelling sibling tasks or the run.
+            search_stop.set()
 
     def _run_summary_with_timeout(
         self,

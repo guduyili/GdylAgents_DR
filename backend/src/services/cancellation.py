@@ -10,6 +10,22 @@ class StopSignal(Protocol):
     def is_set(self) -> bool: ...
 
 
+class ScopedStopSignal:
+    """Combine a parent signal with a local stop without modifying the parent."""
+
+    def __init__(self, parent: StopSignal | None = None) -> None:
+        self._parent = parent
+        self._local = Event()
+
+    def set(self) -> None:
+        self._local.set()
+
+    def is_set(self) -> bool:
+        return self._local.is_set() or (
+            self._parent is not None and self._parent.is_set()
+        )
+
+
 class ResearchCancelled(Exception):
     """Raised when a research run is cancelled while work is in progress."""
 

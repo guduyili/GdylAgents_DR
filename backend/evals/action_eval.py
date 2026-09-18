@@ -24,6 +24,8 @@ class ModeMetrics:
     unique_sources: int
     stop_reason: str
     errors: int
+    claim_coverage: float
+    conflict_groups: int
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,7 @@ class ActionEvalResult:
     fixed: ModeMetrics
     decision: ModeMetrics
     source_gain: int
+    claim_coverage_gain: float
     passed: bool
     failures: tuple[str, ...]
 
@@ -65,9 +68,30 @@ def _material_result(materials: dict, query: str) -> SearchOutcome:
     )
 
 
+def _quality_metrics(results: object, case: dict) -> tuple[float, int]:
+    urls = _valid_urls(results)
+    claims = case.get("claims", [])
+    covered = 0
+    if isinstance(claims, list):
+        for claim in claims:
+            required = claim.get("required_urls", []) if isinstance(claim, dict) else []
+            if isinstance(required, list) and required and all(item in urls for item in required):
+                covered += 1
+    coverage = covered / len(claims) if isinstance(claims, list) and claims else 0.0
+    conflicts = 0
+    groups = case.get("conflict_groups", [])
+    if isinstance(groups, list):
+        for group in groups:
+            if isinstance(group, list) and len(set(group) & urls) >= 2:
+                conflicts += 1
+    return coverage, conflicts
+
+
 def _fixed_metrics(case: dict) -> ModeMetrics:
     outcome = _material_result(case.get("materials", {}), str(case.get("initial_query", "")))
-    return ModeMetrics(1, len(_valid_urls(outcome.payload.get("results"))), "fixed", 0)
+    sources = len(_valid_urls(outcome.payload.get("results")))
+    coverage, conflicts = _quality_metrics(outcome.payload.get("results"), case)
+    return ModeMetrics(1, sources, "fixed", 0, coverage, conflicts)
 
 
 def run_case(case: dict) -> ActionEvalResult:
@@ -108,6 +132,8 @@ def run_case(case: dict) -> ActionEvalResult:
         unique_sources=len(_valid_urls(result.outcome.payload.get("results"))),
         stop_reason=result.stop_reason,
         errors=errors,
+        claim_coverage=_quality_metrics(result.outcome.payload.get("results"), case)[0],
+        conflict_groups=_quality_metrics(result.outcome.payload.get("results"), case)[1],
     )
     fixed = _fixed_metrics(case)
     expected_reason = str(case.get("expected_stop_reason", "finish"))
@@ -120,6 +146,7 @@ def run_case(case: dict) -> ActionEvalResult:
     return ActionEvalResult(
         case_id=str(case.get("id", case.get("topic", "case"))), fixed=fixed,
         decision=decision, source_gain=decision.unique_sources - fixed.unique_sources,
+        claim_coverage_gain=decision.claim_coverage - fixed.claim_coverage,
         passed=not failures, failures=tuple(failures),
     )
 

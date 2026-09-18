@@ -38,6 +38,39 @@ def test_action_eval_compares_same_materials_and_reports_gain():
     assert result.source_gain == 1
 
 
+def test_action_eval_scores_claim_coverage_and_conflicting_sources():
+    result = compare_case(case(
+        id="conflict-and-claim",
+        materials={
+            "agent": [{"url": "https://example.com/old", "title": "Old", "content": "old"}],
+            "agent tools": [
+                {"url": "https://example.com/old", "title": "Old", "content": "old"},
+                {"url": "https://example.com/new", "title": "New", "content": "new"},
+            ],
+        },
+        claims=[{"id": "new-fact", "required_urls": ["https://example.com/new"]}],
+        conflict_groups=[["https://example.com/old", "https://example.com/new"]],
+    ))
+
+    assert result.fixed.claim_coverage == 0.0
+    assert result.decision.claim_coverage == 1.0
+    assert result.decision.conflict_groups == 1
+    assert result.claim_coverage_gain == 1.0
+
+
+def test_action_eval_records_insufficient_evidence_without_inflating_coverage():
+    result = run_case(case(
+        id="insufficient",
+        decisions=[{"action": "finish", "reason": "not enough"}],
+        claims=[{"id": "missing", "required_urls": ["https://example.com/missing"]}],
+        expected_stop_reason="no_evidence", minimum_sources=0,
+    ))
+
+    assert result.passed is True
+    assert result.decision.claim_coverage == 0.0
+    assert result.decision.conflict_groups == 0
+
+
 def test_action_eval_preserves_safety_stops_and_never_retries_repeat():
     result = run_case(case(
         id="repeat",

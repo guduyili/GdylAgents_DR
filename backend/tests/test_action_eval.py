@@ -44,18 +44,25 @@ def test_action_eval_scores_claim_coverage_and_conflicting_sources():
         materials={
             "agent": [{"url": "https://example.com/old", "title": "Old", "content": "old"}],
             "agent tools": [
-                {"url": "https://example.com/old", "title": "Old", "content": "old"},
-                {"url": "https://example.com/new", "title": "New", "content": "new"},
+                {"url": "https://example.com/old", "title": "Old", "content": "old", "published_at": "2020-01-01"},
+                {"url": "https://example.com/new", "title": "New", "content": "new evidence", "published_at": "2026-09-10"},
             ],
         },
-        claims=[{"id": "new-fact", "required_urls": ["https://example.com/new"]}],
+        claims=[{"id": "new-fact", "required_urls": ["https://example.com/new"], "required_terms": ["new", "evidence"], "max_age_days": 30}],
         conflict_groups=[["https://example.com/old", "https://example.com/new"]],
+        as_of="2026-09-18",
+        summaries={"fixed": "old", "decision": "new evidence"},
+        summary_required_terms=["new", "evidence"],
     ))
 
     assert result.fixed.claim_coverage == 0.0
     assert result.decision.claim_coverage == 1.0
     assert result.decision.conflict_groups == 1
     assert result.claim_coverage_gain == 1.0
+    assert result.decision.evidence_support == 1.0
+    assert result.decision.freshness_coverage == 1.0
+    assert result.decision.summary_correctness == 1.0
+    assert result.fixed.summary_correctness == 0.0
 
 
 def test_action_eval_records_insufficient_evidence_without_inflating_coverage():
@@ -69,6 +76,21 @@ def test_action_eval_records_insufficient_evidence_without_inflating_coverage():
     assert result.passed is True
     assert result.decision.claim_coverage == 0.0
     assert result.decision.conflict_groups == 0
+
+
+def test_action_eval_does_not_count_stale_or_unsupported_content():
+    result = run_case(case(
+        id="stale-unsupported",
+        materials={"agent": [{"url": "https://example.com/stale", "content": "unrelated", "published_at": "2020-01-01"}]},
+        decisions=[{"action": "search", "query": "agent", "reason": "collect"}, {"action": "finish", "reason": "done"}],
+        claims=[{"id": "fact", "required_urls": ["https://example.com/stale"], "required_terms": ["target"], "max_age_days": 30}],
+        as_of="2026-09-18", expected_stop_reason="finish", minimum_sources=1,
+        minimum_evidence_support=1.0,
+    ))
+    assert result.passed is False
+    assert result.decision.claim_coverage == 1.0
+    assert result.decision.evidence_support == 0.0
+    assert result.decision.freshness_coverage == 0.0
 
 
 def test_action_eval_preserves_safety_stops_and_never_retries_repeat():

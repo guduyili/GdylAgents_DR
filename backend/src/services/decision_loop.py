@@ -21,6 +21,7 @@ class Evidence:
     title: str
     url: str
     content: str
+    published_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ def _sources(payload: dict) -> tuple[Evidence, ...]:
         found.setdefault(url, Evidence(
             title=title[:256] if isinstance(title, str) else url,
             url=url, content=content[:2000] if isinstance(content, str) else "",
+            published_at=entry.get("published_at") if isinstance(entry.get("published_at"), str) else None,
         ))
     return tuple(found.values())
 

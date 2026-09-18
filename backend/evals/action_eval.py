@@ -10,6 +10,7 @@ import argparse
 import json
 import sys
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -26,6 +27,9 @@ class ModeMetrics:
     errors: int
     claim_coverage: float
     conflict_groups: int
+    evidence_support: float
+    freshness_coverage: float
+    summary_correctness: float
 
 
 @dataclass(frozen=True)
@@ -87,11 +91,70 @@ def _quality_metrics(results: object, case: dict) -> tuple[float, int]:
     return coverage, conflicts
 
 
+def _evidence_quality(results: object, case: dict, summary: str = "") -> tuple[float, float, float]:
+    """Score marked claims from source snippets, dates and optional summary text."""
+    entries = [item for item in results if isinstance(item, dict)] if isinstance(results, list) else []
+    by_url = {item.get("url"): item for item in entries if item.get("url") in _valid_urls(entries)}
+    claims = case.get("claims", [])
+    supported = 0
+    freshness_required = 0
+    fresh = 0
+    as_of_raw = case.get("as_of")
+    try:
+        as_of = date.fromisoformat(str(as_of_raw)[:10])
+    except ValueError:
+        as_of = None
+    if isinstance(claims, list):
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            urls = claim.get("required_urls", [])
+            sources = [by_url[url] for url in urls if isinstance(urls, list) and url in by_url]
+            terms = claim.get("required_terms", [])
+            combined = " ".join(
+                str(source.get("title", "")) + " " + str(source.get("content", ""))
+                for source in sources
+            ).casefold()
+            if sources and (not terms or all(str(term).casefold() in combined for term in terms)):
+                supported += 1
+            max_age = claim.get("max_age_days")
+            if max_age is not None:
+                freshness_required += 1
+                if as_of is not None and sources:
+                    dates: list[date] = []
+                    for source in sources:
+                        try:
+                            dates.append(date.fromisoformat(str(source.get("published_at", ""))[:10]))
+                        except ValueError:
+                            pass
+                    if dates and all(0 <= (as_of - published).days <= int(max_age) for published in dates):
+                        fresh += 1
+    denominator = len(claims) if isinstance(claims, list) and claims else 0
+    evidence_support = supported / denominator if denominator else 0.0
+    freshness_coverage = fresh / freshness_required if freshness_required else 0.0
+    summary_terms = case.get("summary_required_terms", [])
+    if isinstance(summary_terms, list) and summary_terms:
+        summary_text = str(summary).casefold()
+        summary_correctness = sum(str(term).casefold() in summary_text for term in summary_terms) / len(summary_terms)
+    else:
+        summary_correctness = 0.0
+    return evidence_support, freshness_coverage, summary_correctness
+
+
+def _mode_metrics(results: object, case: dict, *, search_count: int, stop_reason: str, errors: int, summary: str = "") -> ModeMetrics:
+    coverage, conflicts = _quality_metrics(results, case)
+    support, freshness, summary_correctness = _evidence_quality(results, case, summary)
+    return ModeMetrics(
+        search_count, len(_valid_urls(results)), stop_reason, errors,
+        coverage, conflicts, support, freshness, summary_correctness,
+    )
+
+
 def _fixed_metrics(case: dict) -> ModeMetrics:
     outcome = _material_result(case.get("materials", {}), str(case.get("initial_query", "")))
-    sources = len(_valid_urls(outcome.payload.get("results")))
-    coverage, conflicts = _quality_metrics(outcome.payload.get("results"), case)
-    return ModeMetrics(1, sources, "fixed", 0, coverage, conflicts)
+    summaries = case.get("summaries", {})
+    summary = summaries.get("fixed", "") if isinstance(summaries, dict) else ""
+    return _mode_metrics(outcome.payload.get("results"), case, search_count=1, stop_reason="fixed", errors=0, summary=summary)
 
 
 def run_case(case: dict) -> ActionEvalResult:
@@ -127,22 +190,23 @@ def run_case(case: dict) -> ActionEvalResult:
     except StopIteration as done:
         result = done.value
 
-    decision = ModeMetrics(
-        search_count=searches,
-        unique_sources=len(_valid_urls(result.outcome.payload.get("results"))),
-        stop_reason=result.stop_reason,
-        errors=errors,
-        claim_coverage=_quality_metrics(result.outcome.payload.get("results"), case)[0],
-        conflict_groups=_quality_metrics(result.outcome.payload.get("results"), case)[1],
+    summaries = case.get("summaries", {})
+    summary = summaries.get("decision", "") if isinstance(summaries, dict) else ""
+    decision = _mode_metrics(
+        result.outcome.payload.get("results"), case, search_count=searches,
+        stop_reason=result.stop_reason, errors=errors, summary=summary,
     )
     fixed = _fixed_metrics(case)
     expected_reason = str(case.get("expected_stop_reason", "finish"))
     minimum_sources = int(case.get("minimum_sources", 0))
+    minimum_support = float(case.get("minimum_evidence_support", 0.0))
     failures: list[str] = []
     if decision.stop_reason != expected_reason:
         failures.append(f"stop reason {decision.stop_reason!r} != {expected_reason!r}")
     if decision.unique_sources < minimum_sources:
         failures.append(f"sources {decision.unique_sources} < {minimum_sources}")
+    if decision.evidence_support < minimum_support:
+        failures.append(f"evidence support {decision.evidence_support:.2f} < {minimum_support:.2f}")
     return ActionEvalResult(
         case_id=str(case.get("id", case.get("topic", "case"))), fixed=fixed,
         decision=decision, source_gain=decision.unique_sources - fixed.unique_sources,
